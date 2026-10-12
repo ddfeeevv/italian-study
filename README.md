@@ -1,5 +1,7 @@
 # Parola — Italian Study
 
+Репозиторий: https://github.com/ddfeeevv/italian-study
+
 Мобильное SPA для лексики и грамматики: интервальные повторения, два уровня проверки, синхронизация через Supabase.
 
 ## Стек
