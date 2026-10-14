@@ -17,7 +17,7 @@ export default function App() {
     <AuthProvider>
       <AppStoreProvider>
         <ThemeSync />
-        <BrowserRouter>
+        <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '') || undefined}>
           <Routes>
             <Route path="/login" element={<AuthPage />} />
             <Route element={<ProtectedRoute />}>

@@ -32,6 +32,7 @@ export type ThemePreference = 'light' | 'dark' | 'system'
 
 export type Settings = {
   theme: ThemePreference
+  autoPlayAudio: boolean
 }
 
 export type AppData = {

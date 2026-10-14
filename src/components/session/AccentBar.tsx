@@ -42,8 +42,11 @@ export function AccentBar({ offset = 0 }: { offset?: number }) {
 
   return (
     <div
-      className="fixed inset-x-0 z-30 mx-auto flex w-full max-w-md justify-center gap-2 border-t border-line bg-card/95 px-3 py-2 backdrop-blur"
-      style={{ bottom: lift }}
+      className="fixed inset-x-0 z-30 mx-auto flex w-full max-w-md justify-center gap-2 border-t border-line bg-card/95 px-3 pt-2 backdrop-blur"
+      style={{
+        bottom: lift,
+        paddingBottom: lift > 80 ? '0.5rem' : 'max(0.5rem, env(safe-area-inset-bottom))',
+      }}
     >
       {ITALIAN_ACCENTS.map((accent) => (
         <button

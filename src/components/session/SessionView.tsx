@@ -1,6 +1,7 @@
 import { Check, Lightbulb, PencilLine, X } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { isTextInputFocused } from '../../lib/keyboard'
 import {
   applyCorrect,
   applyIncorrect,
@@ -12,9 +13,11 @@ import {
   splitCloze,
 } from '../../lib/session'
 import { advanceCard, failCard } from '../../lib/srs'
+import { italianSpeechText, speakItalian } from '../../lib/tts'
 import { clsx } from '../../lib/utils'
 import { useAppStore } from '../../store/app-store'
 import type { Card } from '../../types/models'
+import { SpeakButton } from '../SpeakButton'
 import { SyncBadge } from '../SyncBadge'
 import { Button, EmptyState, IconButton, Screen } from '../ui'
 import { AccentBar } from './AccentBar'
@@ -35,7 +38,7 @@ export function SessionView({
   practice?: boolean
 }) {
   const navigate = useNavigate()
-  const { cards: allCards, updateCard } = useAppStore()
+  const { cards: allCards, settings, updateCard } = useAppStore()
   const [runtime, setRuntime] = useState(() => createSession(cards))
   const [choices, setChoices] = useState<string[]>([])
   const [selected, setSelected] = useState<string | null>(null)
@@ -46,12 +49,29 @@ export function SessionView({
   const [locked, setLocked] = useState(false)
   const [explain, setExplain] = useState<{ answer: string; explanation?: string } | null>(null)
 
+  const pendingRuntimeRef = useRef<ReturnType<typeof createSession> | null>(null)
+  const advanceTimerRef = useRef<number | null>(null)
+
   const cardMap = useMemo(() => new Map(allCards.map((card) => [card.id, card])), [allCards])
   const current = runtime.current
   const currentCard = current ? cardMap.get(current.cardId) : undefined
   const pool = currentCard
     ? allCards.filter((card) => card.deckId === currentCard.deckId)
     : allCards
+
+  const clearAdvanceTimer = () => {
+    if (advanceTimerRef.current) {
+      window.clearTimeout(advanceTimerRef.current)
+      advanceTimerRef.current = null
+    }
+  }
+
+  const applyRuntime = (nextRuntime: ReturnType<typeof createSession>) => {
+    pendingRuntimeRef.current = null
+    clearAdvanceTimer()
+    setRuntime(nextRuntime)
+    setLocked(false)
+  }
 
   useEffect(() => {
     if (!current || !currentCard) return
@@ -65,11 +85,18 @@ export function SessionView({
     setExplain(null)
   }, [current?.cardId, current?.tier, currentCard?.id])
 
-  const goNext = (nextRuntime = runtime) => {
-    window.setTimeout(() => {
-      setRuntime(nextRuntime)
-      setLocked(false)
-    }, nextRuntime.current ? 480 : 160)
+  useEffect(() => {
+    if (!currentCard || !settings.autoPlayAudio) return
+    speakItalian(italianSpeechText(currentCard))
+  }, [current?.cardId, current?.tier, currentCard?.id, settings.autoPlayAudio])
+
+  useEffect(() => () => clearAdvanceTimer(), [])
+
+  const goNext = (nextRuntime = runtime, immediate = false) => {
+    pendingRuntimeRef.current = nextRuntime
+    clearAdvanceTimer()
+    const delay = immediate ? 0 : nextRuntime.current ? 480 : 160
+    advanceTimerRef.current = window.setTimeout(() => applyRuntime(nextRuntime), delay)
   }
 
   const persistFail = (card: Card) => {
@@ -80,7 +107,7 @@ export function SessionView({
     if (!practice) updateCard(advanceCard(card))
   }
 
-  const failAndExplain = (card: Card, _tier: 1 | 2) => {
+  const failAndExplain = (card: Card) => {
     navigator.vibrate?.(40)
     if (shouldAdvance(runtime, card.id)) persistFail(card)
     setExplain({ answer: cardAnswer(card), explanation: card.explanation })
@@ -97,7 +124,7 @@ export function SessionView({
       goNext(applyCorrect(runtime))
       return
     }
-    failAndExplain(currentCard, 1)
+    failAndExplain(currentCard)
   }
 
   const onSpellSubmit = () => {
@@ -116,20 +143,72 @@ export function SessionView({
       return
     }
     setSpellStatus('wrong')
-    failAndExplain(currentCard, 2)
+    failAndExplain(currentCard)
   }
 
   const continueAfterError = () => {
     setExplain(null)
-    setRuntime(applyIncorrect(runtime))
-    setLocked(false)
+    applyRuntime(applyIncorrect(runtime))
   }
+
+  const flushAdvance = () => {
+    if (explain) {
+      continueAfterError()
+      return true
+    }
+    if (pendingRuntimeRef.current) {
+      applyRuntime(pendingRuntimeRef.current)
+      return true
+    }
+    return false
+  }
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Enter') {
+        if (runtime.status === 'complete') {
+          event.preventDefault()
+          navigate(-1)
+          return
+        }
+        if (flushAdvance()) {
+          event.preventDefault()
+          return
+        }
+        if (isTextInputFocused()) return
+        if (current?.tier === 2 && !locked) {
+          event.preventDefault()
+          onSpellSubmit()
+        }
+        return
+      }
+
+      if (isTextInputFocused()) return
+
+      if (event.key === ' ' || event.code === 'Space') {
+        if (!currentCard) return
+        event.preventDefault()
+        speakItalian(italianSpeechText(currentCard))
+        return
+      }
+
+      if (current?.tier !== 1 || locked || explain) return
+      const index = Number(event.key) - 1
+      if (index >= 0 && index < choices.length) {
+        event.preventDefault()
+        onMcSelect(choices[index])
+      }
+    }
+
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
 
   if (runtime.status === 'empty') {
     return (
       <Screen>
         <SessionChrome title={title} progress="0 / 0" onExit={() => navigate(-1)} />
-        <div className="flex flex-1 items-center px-4">
+        <div className="flex flex-1 items-center px-4 pb-[env(safe-area-inset-bottom)]">
           <EmptyState
             title="Нечего повторять"
             text="На сегодня карточек нет. Добавьте слова или грамматику — или откройте практику."
@@ -144,7 +223,7 @@ export function SessionView({
     return (
       <Screen>
         <SessionChrome title={title} progress={`${runtime.total} / ${runtime.total}`} onExit={() => navigate(-1)} />
-        <div className="flex flex-1 flex-col justify-center px-5">
+        <div className="flex flex-1 flex-col justify-center px-5 pb-[env(safe-area-inset-bottom)]">
           <div className="animate-rise rounded-3xl border border-line bg-card px-6 py-10 text-center shadow-[var(--shadow)]">
             <div className="mx-auto mb-5 flex size-16 items-center justify-center rounded-full bg-success-soft text-success">
               <Check size={30} />
@@ -180,7 +259,7 @@ export function SessionView({
         onExit={() => navigate(-1)}
       />
 
-      <div className="flex flex-1 flex-col px-4 pb-24 pt-2">
+      <div className="flex flex-1 flex-col px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-2">
         <div className="mb-6 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.16em] text-muted">
           <span className="inline-flex items-center gap-1.5">
             {current.tier === 1 ? <Check size={14} /> : <PencilLine size={14} />}
@@ -269,41 +348,46 @@ function CardPrompt({
   onChange: (value: string) => void
   onSubmit: () => void
 }) {
+  const speech = italianSpeechText(card)
+
   if (card.type === 'cloze' && card.sentence) {
     const [before, after] = splitCloze(card.sentence)
     return (
       <div>
         <p className="text-sm text-muted">Вставьте форму{card.term ? ` · ${card.term}` : ''}</p>
-        <h1 className="mt-2 font-display text-[1.7rem] leading-snug">
-          {before}
-          {tier === 2 ? (
-            <input
-              value={value}
-              disabled={locked}
-              onChange={(event) => onChange(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  event.preventDefault()
-                  onSubmit()
-                }
-              }}
-              autoCapitalize="none"
-              autoCorrect="off"
-              autoComplete="off"
-              spellCheck={false}
-              className={clsx(
-                'mx-1 inline-block min-w-[6ch] border-b-2 bg-transparent px-1 text-center outline-none',
-                status === 'wrong' && 'border-danger text-danger animate-shake',
-                status === 'correct' && 'border-success text-success',
-                status === 'accent' && 'border-warn text-warn',
-                status === 'idle' && 'border-accent text-fg',
-              )}
-            />
-          ) : (
-            <span className="mx-1 inline-block min-w-[5ch] border-b-2 border-accent text-accent">____</span>
-          )}
-          {after}
-        </h1>
+        <div className="mt-2 flex items-start gap-2">
+          <h1 className="min-w-0 flex-1 font-display text-[1.7rem] leading-snug">
+            {before}
+            {tier === 2 ? (
+              <input
+                value={value}
+                disabled={locked}
+                onChange={(event) => onChange(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    onSubmit()
+                  }
+                }}
+                autoCapitalize="none"
+                autoCorrect="off"
+                autoComplete="off"
+                spellCheck={false}
+                className={clsx(
+                  'mx-1 inline-block min-w-[6ch] border-b-2 bg-transparent px-1 text-center outline-none',
+                  status === 'wrong' && 'border-danger text-danger animate-shake',
+                  status === 'correct' && 'border-success text-success',
+                  status === 'accent' && 'border-warn text-warn',
+                  status === 'idle' && 'border-accent text-fg',
+                )}
+              />
+            ) : (
+              <span className="mx-1 inline-block min-w-[5ch] border-b-2 border-accent text-accent">____</span>
+            )}
+            {after}
+          </h1>
+          <SpeakButton text={speech} />
+        </div>
         {status === 'accent' ? (
           <p className="mt-2 text-sm text-warn">Почти! Проверьте ударения.</p>
         ) : null}
@@ -315,7 +399,10 @@ function CardPrompt({
     return (
       <div>
         <p className="text-sm text-muted">Преобразуйте</p>
-        <h1 className="mt-1 font-display text-[2rem] leading-tight">{card.term}</h1>
+        <div className="mt-1 flex items-start gap-2">
+          <h1 className="min-w-0 flex-1 font-display text-[2rem] leading-tight">{card.term}</h1>
+          <SpeakButton text={speech} />
+        </div>
       </div>
     )
   }
@@ -323,7 +410,10 @@ function CardPrompt({
   return (
     <div>
       <p className="text-sm text-muted">Как сказать</p>
-      <h1 className="mt-1 font-display text-[2.1rem] leading-tight">{card.translation}</h1>
+      <div className="mt-1 flex items-start gap-2">
+        <h1 className="min-w-0 flex-1 font-display text-[2.1rem] leading-tight">{card.translation}</h1>
+        <SpeakButton text={speech} />
+      </div>
     </div>
   )
 }

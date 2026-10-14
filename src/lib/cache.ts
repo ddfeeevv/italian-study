@@ -12,6 +12,7 @@ export function queueKey(userId: string): string {
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
+  autoPlayAudio: true,
 }
 
 export function emptyData(settings: Settings = DEFAULT_SETTINGS): AppData {

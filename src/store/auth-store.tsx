@@ -49,14 +49,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { error } = await supabase.auth.signUp({
           email,
           password,
-          options: { emailRedirectTo: window.location.origin },
+          options: { emailRedirectTo: authRedirectTo() },
         })
         return error?.message ?? null
       },
       signInMagic: async (email) => {
         const { error } = await supabase.auth.signInWithOtp({
           email,
-          options: { emailRedirectTo: window.location.origin },
+          options: { emailRedirectTo: authRedirectTo() },
         })
         return error?.message ?? null
       },
@@ -68,6 +68,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+}
+
+function authRedirectTo(): string {
+  return `${window.location.origin}${import.meta.env.BASE_URL}`.replace(/\/$/, '')
 }
 
 export function useAuth(): AuthStore {

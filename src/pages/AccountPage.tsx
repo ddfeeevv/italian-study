@@ -1,4 +1,4 @@
-import { LogOut, Moon, Sun } from 'lucide-react'
+import { LogOut, Moon, Sun, Volume2 } from 'lucide-react'
 import { Button, Card, Page } from '../components/ui'
 import { SyncBadge } from '../components/SyncBadge'
 import { masteredCount } from '../lib/srs'
@@ -14,7 +14,7 @@ const THEMES: Array<{ id: ThemePreference; label: string }> = [
 
 export function AccountPage() {
   const { user, signOut } = useAuth()
-  const { cards, settings, setSettings, seedIfEmpty, decks } = useAppStore()
+  const { cards, settings, setSettings } = useAppStore()
 
   return (
     <Page>
@@ -54,11 +54,40 @@ export function AccountPage() {
         </div>
       </Card>
 
-      {decks.length === 0 ? (
-        <Button className="mb-4 w-full" variant="secondary" onClick={() => void seedIfEmpty()}>
-          Загрузить демо-колоды
-        </Button>
-      ) : null}
+      <Card className="mb-4 px-4 py-4">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={settings.autoPlayAudio}
+          onClick={() => setSettings({ autoPlayAudio: !settings.autoPlayAudio })}
+          className="flex w-full items-center gap-3 text-left"
+        >
+          <span className="inline-flex size-10 items-center justify-center rounded-2xl bg-surface text-accent">
+            <Volume2 size={18} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold">Автопроизношение</span>
+            <span className="block text-xs leading-5 text-muted">
+              Озвучивать итальянский при открытии карточки. Пробел — повтор.
+            </span>
+          </span>
+          <span
+            className={
+              settings.autoPlayAudio
+                ? 'relative h-7 w-12 shrink-0 rounded-full bg-accent'
+                : 'relative h-7 w-12 shrink-0 rounded-full bg-line'
+            }
+          >
+            <span
+              className={
+                settings.autoPlayAudio
+                  ? 'absolute top-0.5 left-6 size-6 rounded-full bg-white shadow-sm transition-all'
+                  : 'absolute top-0.5 left-0.5 size-6 rounded-full bg-white shadow-sm transition-all'
+              }
+            />
+          </span>
+        </button>
+      </Card>
 
       <Button className="w-full" variant="secondary" onClick={() => void signOut()}>
         <LogOut size={16} />

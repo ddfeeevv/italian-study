@@ -1,8 +1,10 @@
 import { Pencil, Play, Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { SpeakButton } from '../components/SpeakButton'
 import { Button, Card, EmptyState, Field, IconButton, Input, Page, Textarea } from '../components/ui'
 import { createCard, dueCount } from '../lib/srs'
+import { italianSpeechText } from '../lib/tts'
 import { STAGE_LABELS, TYPE_LABELS, type Card as StudyCard, type CardType } from '../types/models'
 import { useAppStore } from '../store/app-store'
 import { useAuth } from '../store/auth-store'
@@ -74,6 +76,7 @@ export function DeckDetailPage() {
         <div className="space-y-2">
           {cards.map((card) => (
             <Card key={card.id} className="flex items-center gap-3 px-4 py-3">
+              <SpeakButton text={italianSpeechText(card)} />
               <button type="button" onClick={() => setEditingCard(card)} className="min-w-0 flex-1 text-left">
                 <p className="truncate font-semibold">{card.type === 'cloze' ? card.sentence ?? card.term : card.term}</p>
                 <p className="truncate text-sm text-muted">{card.target || card.translation}</p>

@@ -11,7 +11,6 @@ import {
 } from 'react'
 import { emptyData, loadCache, loadQueue, loadSettings, saveCache, saveQueue, saveSettings, type PendingOp } from '../lib/cache'
 import { mapCard, mapDeck, toCardRow, toDeckRow } from '../lib/mappers'
-import { buildSeed } from '../lib/seed'
 import { dueCount } from '../lib/srs'
 import { supabase } from '../lib/supabase'
 import { nowIso, uid } from '../lib/utils'
@@ -79,7 +78,6 @@ type AppStore = {
   updateCard: (card: Card) => void
   deleteCard: (cardId: string) => void
   setSettings: (settings: Partial<Settings>) => void
-  seedIfEmpty: () => Promise<void>
   retrySync: () => void
   cardsByDeck: (deckId: string) => Card[]
 }
@@ -200,26 +198,14 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       if (decksRes.error) throw decksRes.error
       if (cardsRes.error) throw cardsRes.error
 
-      if ((decksRes.data?.length ?? 0) === 0) {
-        const seed = buildSeed(userId)
-        dispatch({
-          type: 'replace',
-          data: { ...emptyData(loadSettings()), decks: seed.decks, cards: seed.cards },
-        })
-        const deckErr = (await supabase.from('decks').insert(seed.decks.map(toDeckRow))).error
-        if (deckErr) throw deckErr
-        const cardErr = (await supabase.from('cards').insert(seed.cards.map(toCardRow))).error
-        if (cardErr) throw cardErr
-      } else {
-        dispatch({
-          type: 'replace',
-          data: {
-            ...emptyData(loadSettings()),
-            decks: (decksRes.data ?? []).map(mapDeck),
-            cards: (cardsRes.data ?? []).map(mapCard),
-          },
-        })
-      }
+      dispatch({
+        type: 'replace',
+        data: {
+          ...emptyData(loadSettings()),
+          decks: (decksRes.data ?? []).map(mapDeck),
+          cards: (cardsRes.data ?? []).map(mapCard),
+        },
+      })
       setReady(true)
       await flushQueue()
     } catch {
@@ -291,11 +277,6 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     saveSettings({ ...dataRef.current.settings, ...settings })
   }, [])
 
-  const seedIfEmpty = useCallback(async () => {
-    if (!user || dataRef.current.decks.length > 0) return
-    await hydrate(user.id)
-  }, [hydrate, user])
-
   const retrySync = useCallback(() => {
     if (user) void hydrate(user.id)
   }, [hydrate, user])
@@ -321,7 +302,6 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       updateCard,
       deleteCard,
       setSettings,
-      seedIfEmpty,
       retrySync,
       cardsByDeck,
     }),
@@ -334,7 +314,6 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       deleteDeck,
       ready,
       retrySync,
-      seedIfEmpty,
       setSettings,
       syncStatus,
       updateCard,

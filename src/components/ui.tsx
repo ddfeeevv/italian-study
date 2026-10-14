@@ -11,7 +11,7 @@ export function Screen({ children, className }: { children: ReactNode; className
 
 export function Page({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <main className={clsx('flex-1 px-4 pb-28 pt-4', className)}>{children}</main>
+    <main className={clsx('flex-1 px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-4', className)}>{children}</main>
   )
 }
 
