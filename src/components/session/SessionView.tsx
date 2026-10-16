@@ -51,6 +51,8 @@ export function SessionView({
 
   const pendingRuntimeRef = useRef<ReturnType<typeof createSession> | null>(null)
   const advanceTimerRef = useRef<number | null>(null)
+  /** Ignore Enter/clicks that belong to the same keystroke that opened the error sheet. */
+  const explainReadyAtRef = useRef(0)
 
   const cardMap = useMemo(() => new Map(allCards.map((card) => [card.id, card])), [allCards])
   const current = runtime.current
@@ -110,8 +112,12 @@ export function SessionView({
   const failAndExplain = (card: Card) => {
     navigator.vibrate?.(40)
     if (shouldAdvance(runtime, card.id)) persistFail(card)
+    // Block the submitting Enter/keyup from immediately dismissing the sheet
+    explainReadyAtRef.current = performance.now() + 550
     setExplain({ answer: cardAnswer(card), explanation: card.explanation })
   }
+
+  const explainReady = () => performance.now() >= explainReadyAtRef.current
 
   const onMcSelect = (option: string) => {
     if (!current || !currentCard || locked) return
@@ -147,12 +153,14 @@ export function SessionView({
   }
 
   const continueAfterError = () => {
+    if (!explainReady()) return
     setExplain(null)
     applyRuntime(applyIncorrect(runtime))
   }
 
   const flushAdvance = () => {
     if (explain) {
+      if (!explainReady()) return true
       continueAfterError()
       return true
     }
@@ -169,6 +177,13 @@ export function SessionView({
         if (runtime.status === 'complete') {
           event.preventDefault()
           navigate(-1)
+          return
+        }
+        // Error sheet owns Enter — don't also re-submit the spelling field
+        if (explain) {
+          event.preventDefault()
+          event.stopPropagation()
+          flushAdvance()
           return
         }
         if (flushAdvance()) {
@@ -368,7 +383,8 @@ function CardPrompt({
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') {
                     event.preventDefault()
-                    onSubmit()
+                    event.stopPropagation()
+                    if (!locked) onSubmit()
                   }
                 }}
                 autoCapitalize="none"

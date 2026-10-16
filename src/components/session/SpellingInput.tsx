@@ -22,9 +22,10 @@ export function SpellingInput({
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
+    if (disabled) return
     const id = window.setTimeout(() => inputRef.current?.focus(), 40)
     return () => window.clearTimeout(id)
-  }, [expected, status])
+  }, [expected, status, disabled])
 
   return (
     <div className="space-y-4">
@@ -36,7 +37,8 @@ export function SpellingInput({
         onKeyDown={(event) => {
           if (event.key === 'Enter') {
             event.preventDefault()
-            onSubmit()
+            event.stopPropagation()
+            if (!disabled) onSubmit()
           }
         }}
         autoCapitalize="none"
