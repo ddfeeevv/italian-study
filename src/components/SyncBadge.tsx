@@ -16,17 +16,21 @@ const DOT: Record<SyncStatus, string> = {
 }
 
 export function SyncBadge() {
-  const { syncStatus, retrySync } = useAppStore()
+  const { syncStatus, syncError, retrySync } = useAppStore()
   return (
     <button
       type="button"
       onClick={retrySync}
       title={
         syncStatus === 'error'
-          ? 'Синхронизация с облаком не удалась. Нажмите, чтобы повторить. Данные на этом устройстве сохранены.'
+          ? syncError
+            ? `Синк не удался: ${syncError}. Нажмите, чтобы повторить. Локальные данные на месте.`
+            : 'Синхронизация с облаком не удалась. Нажмите, чтобы повторить.'
           : syncStatus === 'offline'
             ? 'Нет сети — правки копятся локально'
-            : 'Статус синхронизации с Supabase'
+            : syncStatus === 'syncing'
+              ? 'Идёт отправка в Supabase…'
+              : 'Статус синхронизации с Supabase'
       }
       className="inline-flex items-center gap-1.5 rounded-full bg-surface px-2.5 py-1 text-[11px] font-semibold text-muted"
     >
