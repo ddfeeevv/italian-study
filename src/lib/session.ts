@@ -153,21 +153,36 @@ export function cardAnswer(card: Card): string {
   return card.target || card.term
 }
 
+/**
+ * MC distractors: Italian production forms only.
+ * Prefer `target` from same-type cards in the deck. Never use translation,
+ * explanation, notes, or free-form `options` (those often hold Russian glosses).
+ */
 export function buildChoices(card: Card, pool: Card[]): string[] {
-  const correct = cardAnswer(card)
-  const provided = card.options.filter((option) => normalizeAnswer(option) !== normalizeAnswer(correct))
+  const correct = cardAnswer(card).trim()
+  const correctKey = normalizeAnswer(correct)
+
   const fromPool = shuffle(
     pool.filter((item) => item.id !== card.id && item.type === card.type),
   )
-    .map((item) => cardAnswer(item))
-    .filter((term) => normalizeAnswer(term) !== normalizeAnswer(correct))
+    .map((item) => (item.target || '').trim())
+    .filter((term) => term.length > 0 && normalizeAnswer(term) !== correctKey)
+    .filter(isItalianProductionForm)
+
+  // Same-type targets from the wider deck if the typed pool is thin
+  const fromAnySameType = shuffle(
+    pool.filter((item) => item.id !== card.id),
+  )
+    .map((item) => (item.target || '').trim())
+    .filter((term) => term.length > 0 && normalizeAnswer(term) !== correctKey)
+    .filter(isItalianProductionForm)
 
   const extras = FALLBACKS[card.type].filter(
-    (term) => normalizeAnswer(term) !== normalizeAnswer(correct),
+    (term) => normalizeAnswer(term) !== correctKey && isItalianProductionForm(term),
   )
 
   const options = [correct]
-  for (const term of [...provided, ...fromPool, ...extras]) {
+  for (const term of [...fromPool, ...fromAnySameType, ...extras]) {
     if (options.length >= 4) break
     if (!options.some((option) => normalizeAnswer(option) === normalizeAnswer(term))) {
       options.push(term)
@@ -175,6 +190,17 @@ export function buildChoices(card: Card, pool: Card[]): string[] {
   }
 
   return shuffle(options)
+}
+
+/** Reject Cyrillic glosses / long explanations that must never appear as MC options. */
+export function isItalianProductionForm(value: string): boolean {
+  const v = value.trim()
+  if (!v || v.length > 48) return false
+  if (/[а-яёА-ЯЁ]/.test(v)) return false
+  if (/^(от|из|для)\s+/i.test(v)) return false
+  // "мы (noi) понимаем", "noi = мы", etc.
+  if (/\([^)]{0,12}\)/.test(v) && /\s/.test(v) && v.split(/\s+/).length >= 3) return false
+  return true
 }
 
 export function normalizeAnswer(value: string): string {

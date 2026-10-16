@@ -440,6 +440,20 @@ function PreviewCard({ card, onContinue }: { card: Card; onContinue: () => void 
   )
 }
 
+function clozePromptLabel(card: Card): string {
+  const infinitive = card.term?.trim()
+  const answer = (card.target || '').trim()
+  // Show base form only when it is clearly not the answer itself
+  if (
+    infinitive &&
+    answer &&
+    infinitive.toLowerCase() !== answer.toLowerCase()
+  ) {
+    return `Заполните пропуск · ${infinitive}`
+  }
+  return 'Заполните пропуск'
+}
+
 function CardPrompt({
   card,
   tier,
@@ -465,7 +479,7 @@ function CardPrompt({
     const [before, after] = splitCloze(card.sentence)
     return (
       <div>
-        <p className="text-sm text-muted">Вставьте форму{card.term ? ` · ${card.term}` : ''}</p>
+        <p className="text-sm text-muted">{clozePromptLabel(card)}</p>
         <div className="mt-2 flex items-start gap-2">
           <h1 className="min-w-0 flex-1 font-display text-[1.7rem] leading-snug">
             {before}
