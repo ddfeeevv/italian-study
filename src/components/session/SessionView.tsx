@@ -86,8 +86,8 @@ export function SessionView({
   }, [current?.cardId, current?.tier, currentCard?.id])
 
   useEffect(() => {
-    if (!currentCard || !settings.autoPlayAudio) return
-    speakItalian(italianSpeechText(currentCard))
+    if (!current || !currentCard || !settings.autoPlayAudio) return
+    speakItalian(italianSpeechText(currentCard, current.tier))
   }, [current?.cardId, current?.tier, currentCard?.id, settings.autoPlayAudio])
 
   useEffect(() => () => clearAdvanceTimer(), [])
@@ -186,9 +186,11 @@ export function SessionView({
       if (isTextInputFocused()) return
 
       if (event.key === ' ' || event.code === 'Space') {
-        if (!currentCard) return
+        if (!current || !currentCard) return
+        const phrase = italianSpeechText(currentCard, current.tier)
+        if (!phrase) return
         event.preventDefault()
-        speakItalian(italianSpeechText(currentCard))
+        speakItalian(phrase)
         return
       }
 
@@ -348,7 +350,7 @@ function CardPrompt({
   onChange: (value: string) => void
   onSubmit: () => void
 }) {
-  const speech = italianSpeechText(card)
+  const speech = italianSpeechText(card, tier)
 
   if (card.type === 'cloze' && card.sentence) {
     const [before, after] = splitCloze(card.sentence)
@@ -386,7 +388,7 @@ function CardPrompt({
             )}
             {after}
           </h1>
-          <SpeakButton text={speech} />
+          {speech ? <SpeakButton text={speech} /> : null}
         </div>
         {status === 'accent' ? (
           <p className="mt-2 text-sm text-warn">Почти! Проверьте ударения.</p>
@@ -401,7 +403,7 @@ function CardPrompt({
         <p className="text-sm text-muted">Преобразуйте</p>
         <div className="mt-1 flex items-start gap-2">
           <h1 className="min-w-0 flex-1 font-display text-[2rem] leading-tight">{card.term}</h1>
-          <SpeakButton text={speech} />
+          {speech ? <SpeakButton text={speech} /> : null}
         </div>
       </div>
     )
@@ -412,7 +414,7 @@ function CardPrompt({
       <p className="text-sm text-muted">Как сказать</p>
       <div className="mt-1 flex items-start gap-2">
         <h1 className="min-w-0 flex-1 font-display text-[2.1rem] leading-tight">{card.translation}</h1>
-        <SpeakButton text={speech} />
+        {speech ? <SpeakButton text={speech} /> : null}
       </div>
     </div>
   )

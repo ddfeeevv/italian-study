@@ -7,10 +7,15 @@ function pickItalianVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice 
   )
 }
 
-export function italianSpeechText(card: Card): string {
+/** Text safe to speak without spoiling the answer for the given tier. */
+export function italianSpeechText(card: Card, tier: 1 | 2 = 2): string {
   if (card.type === 'cloze' && card.sentence) {
-    return card.sentence.replace(/\{blank\}/gi, card.target || card.term || '').replace(/\s+/g, ' ').trim()
+    // Tier 1: don't fill the blank — that is the answer
+    const fill = tier === 2 ? card.target || card.term || '' : '…'
+    return card.sentence.replace(/\{blank\}/gi, fill).replace(/\s+/g, ' ').trim()
   }
+  // Vocab Tier 1 shows Russian; speaking Italian would reveal the MC answer
+  if (card.type === 'vocab' && tier === 1) return ''
   return (card.term || card.target || '').trim()
 }
 
