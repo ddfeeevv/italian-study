@@ -1,16 +1,19 @@
-import { Check, Lightbulb, PencilLine, X } from 'lucide-react'
+import { BookOpen, Check, Lightbulb, PencilLine, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { isTextInputFocused } from '../../lib/keyboard'
 import {
   applyCorrect,
   applyIncorrect,
+  applyPreviewDone,
   buildChoices,
   cardAnswer,
   checkSpelling,
   createSession,
+  SESSION_CARD_LIMIT,
   shouldAdvance,
   splitCloze,
+  type SessionRuntime,
 } from '../../lib/session'
 import { advanceCard, failCard } from '../../lib/srs'
 import { italianSpeechText, speakItalian } from '../../lib/tts'
@@ -49,9 +52,8 @@ export function SessionView({
   const [locked, setLocked] = useState(false)
   const [explain, setExplain] = useState<{ answer: string; explanation?: string } | null>(null)
 
-  const pendingRuntimeRef = useRef<ReturnType<typeof createSession> | null>(null)
+  const pendingRuntimeRef = useRef<SessionRuntime | null>(null)
   const advanceTimerRef = useRef<number | null>(null)
-  /** Ignore Enter/clicks that belong to the same keystroke that opened the error sheet. */
   const explainReadyAtRef = useRef(0)
 
   const cardMap = useMemo(() => new Map(allCards.map((card) => [card.id, card])), [allCards])
@@ -68,7 +70,7 @@ export function SessionView({
     }
   }
 
-  const applyRuntime = (nextRuntime: ReturnType<typeof createSession>) => {
+  const applyRuntime = (nextRuntime: SessionRuntime) => {
     pendingRuntimeRef.current = null
     clearAdvanceTimer()
     setRuntime(nextRuntime)
@@ -88,24 +90,32 @@ export function SessionView({
   }, [current?.cardId, current?.tier, currentCard?.id])
 
   const answerRevealed = Boolean(locked || explain)
+  const isPreview = current?.tier === 0
 
   useEffect(() => {
     if (!current || !currentCard || !settings.autoPlayAudio) return
-    if (answerRevealed) {
-      speakItalian(italianSpeechText(currentCard, { tier: current.tier, revealed: true }))
+    if (isPreview) {
+      speakItalian(italianSpeechText(currentCard, { revealed: true }))
       return
     }
-    // Before answer: never spoil vocab (both MC and spelling). Cloze/transform may speak the prompt only.
+    if (answerRevealed) {
+      speakItalian(italianSpeechText(currentCard, { tier: current.tier === 0 ? 1 : current.tier, revealed: true }))
+      return
+    }
     if (currentCard.type === 'vocab') return
-    speakItalian(italianSpeechText(currentCard, { tier: current.tier, revealed: false }))
-  }, [current?.cardId, current?.tier, currentCard?.id, settings.autoPlayAudio, answerRevealed])
+    speakItalian(
+      italianSpeechText(currentCard, {
+        tier: current.tier === 0 ? 1 : current.tier,
+        revealed: false,
+      }),
+    )
+  }, [current?.cardId, current?.tier, currentCard?.id, settings.autoPlayAudio, answerRevealed, isPreview])
 
   useEffect(() => () => clearAdvanceTimer(), [])
 
   const goNext = (nextRuntime = runtime, immediate = false) => {
     pendingRuntimeRef.current = nextRuntime
     clearAdvanceTimer()
-    // Give a beat after correct answers so TTS / speak button are usable
     const delay = immediate ? 0 : nextRuntime.current ? (settings.autoPlayAudio ? 1100 : 650) : 160
     advanceTimerRef.current = window.setTimeout(() => applyRuntime(nextRuntime), delay)
   }
@@ -121,15 +131,18 @@ export function SessionView({
   const failAndExplain = (card: Card) => {
     navigator.vibrate?.(40)
     if (shouldAdvance(runtime, card.id)) persistFail(card)
-    // Block the submitting Enter/keyup from immediately dismissing the sheet
     explainReadyAtRef.current = performance.now() + 550
     setExplain({ answer: cardAnswer(card), explanation: card.explanation })
   }
 
   const explainReady = () => performance.now() >= explainReadyAtRef.current
 
+  const onPreviewContinue = () => {
+    applyRuntime(applyPreviewDone(runtime))
+  }
+
   const onMcSelect = (option: string) => {
-    if (!current || !currentCard || locked) return
+    if (!current || !currentCard || locked || current.tier !== 1) return
     setLocked(true)
     setSelected(option)
     const ok = option === cardAnswer(currentCard)
@@ -143,7 +156,7 @@ export function SessionView({
   }
 
   const onSpellSubmit = () => {
-    if (!current || !currentCard || locked) return
+    if (!current || !currentCard || locked || current.tier !== 2) return
     const result = checkSpelling(spellValue, cardAnswer(currentCard))
     if (result === 'accent') {
       setSpellStatus('accent')
@@ -188,7 +201,11 @@ export function SessionView({
           navigate(-1)
           return
         }
-        // Error sheet owns Enter — don't also re-submit the spelling field
+        if (isPreview && !locked) {
+          event.preventDefault()
+          onPreviewContinue()
+          return
+        }
         if (explain) {
           event.preventDefault()
           event.stopPropagation()
@@ -212,8 +229,8 @@ export function SessionView({
       if (event.key === ' ' || event.code === 'Space') {
         if (!current || !currentCard) return
         const phrase = italianSpeechText(currentCard, {
-          tier: current.tier,
-          revealed: Boolean(locked || explain),
+          tier: current.tier === 0 ? 2 : current.tier,
+          revealed: Boolean(isPreview || locked || explain),
         })
         if (!phrase) return
         event.preventDefault()
@@ -260,7 +277,10 @@ export function SessionView({
             <h1 className="font-display text-3xl">Сессия завершена</h1>
             <p className="mt-3 text-sm leading-6 text-muted">
               {runtime.total} {pluralCards(runtime.total)}
-              {practice ? ' отработаны в режиме практики.' : ' прошли оба уровня проверки.'}
+              {practice ? ' в этой практике.' : ' в этой сессии.'}
+              {cards.length > SESSION_CARD_LIMIT
+                ? ` За раз берём до ${SESSION_CARD_LIMIT} — остальные в следующей.`
+                : ''}
               {runtime.failedIds.length > 0
                 ? ` Ошибок: ${runtime.failedIds.length} — эти карточки вернутся завтра.`
                 : ' Чисто, без ошибок.'}
@@ -278,6 +298,21 @@ export function SessionView({
 
   const done = runtime.completedIds.length
   const answer = cardAnswer(currentCard)
+  const testTier: 1 | 2 = current.tier === 2 ? 2 : 1
+
+  if (isPreview) {
+    return (
+      <Screen>
+        <SessionChrome
+          title={title}
+          progress={`${done} / ${runtime.total}`}
+          ratio={runtime.total ? done / runtime.total : 0}
+          onExit={() => navigate(-1)}
+        />
+        <PreviewCard card={currentCard} onContinue={onPreviewContinue} />
+      </Screen>
+    )
+  }
 
   return (
     <Screen>
@@ -299,7 +334,7 @@ export function SessionView({
 
         <CardPrompt
           card={currentCard}
-          tier={current.tier}
+          tier={testTier}
           value={spellValue}
           status={spellStatus}
           locked={locked}
@@ -359,6 +394,56 @@ export function SessionView({
       ) : null}
     </Screen>
   )
+}
+
+function PreviewCard({ card, onContinue }: { card: Card; onContinue: () => void }) {
+  const italian = italianSpeechText(card, { revealed: true })
+  const hint = card.notes || card.explanation
+
+  return (
+    <div className="flex flex-1 flex-col px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-4">
+      <p className="mb-6 inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-muted">
+        <BookOpen size={14} />
+        Знакомство
+      </p>
+
+      <div className="flex flex-1 flex-col justify-center">
+        <div className="animate-rise text-center">
+          <div className="flex items-start justify-center gap-2">
+            <h1 className="font-display text-[2.6rem] leading-tight text-fg">{previewItalian(card)}</h1>
+            <SpeakButton text={italian} className="mt-2" />
+          </div>
+          <p className="mt-4 text-lg text-muted">{previewTranslation(card)}</p>
+          {hint ? (
+            <p className="mt-5 flex items-start justify-center gap-2 text-left text-sm leading-6 text-muted">
+              <Lightbulb size={16} className="mt-0.5 shrink-0 text-warn" />
+              <span>{hint}</span>
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      <Button className="mt-8 w-full" onClick={onContinue}>
+        Запомнил, дальше
+      </Button>
+    </div>
+  )
+}
+
+function previewItalian(card: Card): string {
+  if (card.type === 'cloze' && card.sentence) {
+    return card.sentence.replace(/\{blank\}/gi, card.target || card.term || '…').replace(/\s+/g, ' ').trim()
+  }
+  if (card.type === 'transform') {
+    return `${card.term} → ${card.target || card.term}`
+  }
+  return card.term || card.target
+}
+
+function previewTranslation(card: Card): string {
+  if (card.type === 'vocab') return card.translation || '—'
+  if (card.type === 'cloze') return card.term ? `форма · ${card.term}` : 'Заполните пропуск'
+  return 'Преобразуйте форму'
 }
 
 function CardPrompt({

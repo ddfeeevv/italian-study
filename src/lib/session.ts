@@ -1,7 +1,14 @@
 import type { Card } from '../types/models'
 import { insertLater, shuffle } from './utils'
 
-export type SessionTier = 1 | 2
+/** Max unique cards in one study/practice session. */
+export const SESSION_CARD_LIMIT = 10
+
+/** Min/max other queue items between MC success and spelling for the same card. */
+export const SPELLING_GAP_MIN = 3
+export const SPELLING_GAP_MAX = 5
+
+export type SessionTier = 0 | 1 | 2
 
 export type QueueItem = {
   cardId: string
@@ -26,16 +33,18 @@ const FALLBACKS: Record<Card['type'], string[]> = {
 
 export function createSession(cards: Card[]): SessionRuntime {
   const unique = uniqueById(cards)
-  const queue: QueueItem[] = shuffle(unique).map((card) => ({
+  const batch = shuffle(unique).slice(0, SESSION_CARD_LIMIT)
+  // Start with familiarization, then MC, then spaced spelling
+  const queue: QueueItem[] = batch.map((card) => ({
     cardId: card.id,
-    tier: 1,
+    tier: 0,
   }))
   const [current, ...rest] = queue
 
   return {
     queue: rest,
     current: current ?? null,
-    total: unique.length,
+    total: batch.length,
     completedIds: [],
     failedIds: [],
     passedTier1: [],
@@ -43,13 +52,26 @@ export function createSession(cards: Card[]): SessionRuntime {
   }
 }
 
+/** After preview — go straight into Multiple Choice for the same card. */
+export function applyPreviewDone(runtime: SessionRuntime): SessionRuntime {
+  if (!runtime.current || runtime.current.tier !== 0) return runtime
+  return {
+    ...runtime,
+    current: { cardId: runtime.current.cardId, tier: 1 },
+  }
+}
+
 export function applyCorrect(runtime: SessionRuntime): SessionRuntime {
   if (!runtime.current) return runtime
   const { cardId, tier } = runtime.current
 
+  if (tier === 0) {
+    return applyPreviewDone(runtime)
+  }
+
   if (tier === 1) {
     const nextItem: QueueItem = { cardId, tier: 2 }
-    const queue = insertLater(runtime.queue, nextItem)
+    const queue = insertLater(runtime.queue, nextItem, SPELLING_GAP_MIN, SPELLING_GAP_MAX)
     return nextQuestion(runtime, queue, {
       passedTier1: [...runtime.passedTier1, cardId],
     })
@@ -63,10 +85,12 @@ export function applyCorrect(runtime: SessionRuntime): SessionRuntime {
 export function applyIncorrect(runtime: SessionRuntime): SessionRuntime {
   if (!runtime.current) return runtime
   const { cardId, tier } = runtime.current
+  if (tier === 0) return applyPreviewDone(runtime)
+
   const failedIds = runtime.failedIds.includes(cardId)
     ? runtime.failedIds
     : [...runtime.failedIds, cardId]
-  const queue = insertLater(runtime.queue, { cardId, tier })
+  const queue = insertLater(runtime.queue, { cardId, tier }, SPELLING_GAP_MIN, SPELLING_GAP_MAX)
   return nextQuestion(runtime, queue, { failedIds })
 }
 
