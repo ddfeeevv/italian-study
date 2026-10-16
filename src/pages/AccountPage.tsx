@@ -1,6 +1,5 @@
 import { LogOut, Moon, Sun, Volume2 } from 'lucide-react'
 import { Button, Card, Page } from '../components/ui'
-import { SyncBadge } from '../components/SyncBadge'
 import { masteredCount } from '../lib/srs'
 import { useAppStore } from '../store/app-store'
 import { useAuth } from '../store/auth-store'
@@ -18,13 +17,10 @@ export function AccountPage() {
 
   return (
     <Page>
-      <header className="mb-6 flex items-start justify-between pt-2">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">Аккаунт</p>
-          <h1 className="mt-1 font-display text-3xl">Профиль</h1>
-          <p className="mt-2 truncate text-sm text-muted">{user?.email}</p>
-        </div>
-        <SyncBadge />
+      <header className="mb-6 pt-2">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">Аккаунт</p>
+        <h1 className="mt-1 font-display text-3xl">Профиль</h1>
+        <p className="mt-2 truncate text-sm text-muted">{user?.email}</p>
       </header>
 
       <Card className="mb-4 grid grid-cols-3 gap-3 px-4 py-5 text-center">
