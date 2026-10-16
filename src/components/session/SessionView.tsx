@@ -6,13 +6,14 @@ import {
   applyCorrect,
   applyIncorrect,
   applyPreviewDone,
+  BATCH_SIZE_MAX,
   buildChoices,
   cardAnswer,
   checkSpelling,
   createSession,
-  SESSION_CARD_LIMIT,
   shouldAdvance,
   splitCloze,
+  type SessionPhase,
   type SessionRuntime,
 } from '../../lib/session'
 import { advanceCard, failCard } from '../../lib/srs'
@@ -30,6 +31,12 @@ import { SpellingInput } from './SpellingInput'
 
 type McStatus = 'idle' | 'correct' | 'wrong'
 type SpellStatus = 'idle' | 'correct' | 'wrong' | 'accent'
+
+const PHASE_LABEL: Record<SessionPhase, string> = {
+  preview: 'Фаза 1 · Знакомство',
+  mc: 'Фаза 2 · Выбор',
+  spell: 'Фаза 3 · Написание',
+}
 
 export function SessionView({
   cards,
@@ -87,7 +94,7 @@ export function SessionView({
     setShowHint(false)
     setLocked(false)
     setExplain(null)
-  }, [current?.cardId, current?.tier, currentCard?.id])
+  }, [current?.cardId, current?.tier, currentCard?.id, runtime.phase])
 
   const answerRevealed = Boolean(locked || explain)
   const isPreview = current?.tier === 0
@@ -130,7 +137,7 @@ export function SessionView({
 
   const failAndExplain = (card: Card) => {
     navigator.vibrate?.(40)
-    if (shouldAdvance(runtime, card.id)) persistFail(card)
+    if (!runtime.failedIds.includes(card.id)) persistFail(card)
     explainReadyAtRef.current = performance.now() + 550
     setExplain({ answer: cardAnswer(card), explanation: card.explanation })
   }
@@ -166,6 +173,7 @@ export function SessionView({
     if (result === 'exact') {
       navigator.vibrate?.(12)
       setSpellStatus('correct')
+      // Advance SRS only if MC was clean and this spelling is the first fail-free finish
       if (shouldAdvance(runtime, current.cardId)) persistPass(currentCard)
       goNext(applyCorrect(runtime))
       return
@@ -276,14 +284,11 @@ export function SessionView({
             </div>
             <h1 className="font-display text-3xl">Сессия завершена</h1>
             <p className="mt-3 text-sm leading-6 text-muted">
-              {runtime.total} {pluralCards(runtime.total)}
-              {practice ? ' в этой практике.' : ' в этой сессии.'}
-              {cards.length > SESSION_CARD_LIMIT
-                ? ` За раз берём до ${SESSION_CARD_LIMIT} — остальные в следующей.`
-                : ''}
+              Батч из {runtime.total} {pluralCards(runtime.total)}
+              {practice ? ' в практике.' : '.'} За раз берём {BATCH_SIZE_MAX} карточек максимум.
               {runtime.failedIds.length > 0
-                ? ` Ошибок: ${runtime.failedIds.length} — эти карточки вернутся завтра.`
-                : ' Чисто, без ошибок.'}
+                ? ` Ошибок: ${runtime.failedIds.length} — без повышения стадии, вернутся завтра.`
+                : ' Все прошли выбор и написание.'}
             </p>
             <Button className="mt-8 w-full" onClick={() => navigate(-1)}>
               Готово
@@ -307,6 +312,7 @@ export function SessionView({
           title={title}
           progress={`${done} / ${runtime.total}`}
           ratio={runtime.total ? done / runtime.total : 0}
+          phase={PHASE_LABEL.preview}
           onExit={() => navigate(-1)}
         />
         <PreviewCard card={currentCard} onContinue={onPreviewContinue} />
@@ -320,6 +326,7 @@ export function SessionView({
         title={title}
         progress={`${done} / ${runtime.total}`}
         ratio={runtime.total ? done / runtime.total : 0}
+        phase={PHASE_LABEL[runtime.phase]}
         onExit={() => navigate(-1)}
       />
 
@@ -327,7 +334,7 @@ export function SessionView({
         <div className="mb-6 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.16em] text-muted">
           <span className="inline-flex items-center gap-1.5">
             {current.tier === 1 ? <Check size={14} /> : <PencilLine size={14} />}
-            {current.tier === 1 ? 'Уровень 1 · Выбор' : 'Уровень 2 · Написание'}
+            {current.tier === 1 ? 'Выбор' : 'Написание'}
           </span>
           {practice ? <span className="rounded-full bg-surface px-2 py-1">Практика</span> : null}
         </div>
@@ -397,25 +404,28 @@ export function SessionView({
 }
 
 function PreviewCard({ card, onContinue }: { card: Card; onContinue: () => void }) {
-  const italian = italianSpeechText(card, { revealed: true })
-  const hint = card.notes || card.explanation
+  const italian = (card.term || card.target || '').trim()
+  const russian = (card.translation || '').trim()
+  const hint = card.notes?.trim() || undefined
 
   return (
     <div className="flex flex-1 flex-col px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-4">
       <p className="mb-6 inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-muted">
         <BookOpen size={14} />
-        Знакомство
+        Слово
       </p>
 
       <div className="flex flex-1 flex-col justify-center">
         <div className="animate-rise text-center">
-          <div className="flex items-start justify-center gap-2">
-            <h1 className="font-display text-[2.6rem] leading-tight text-fg">{previewItalian(card)}</h1>
-            <SpeakButton text={italian} className="mt-2" />
+          <div className="flex items-center justify-center gap-3">
+            <h1 className="font-display text-[2.75rem] leading-tight text-fg">{italian}</h1>
+            <SpeakButton text={italian} className="size-11 rounded-2xl bg-surface" />
           </div>
-          <p className="mt-4 text-lg text-muted">{previewTranslation(card)}</p>
+          {russian ? (
+            <p className="mt-5 font-display text-2xl leading-snug text-accent">{russian}</p>
+          ) : null}
           {hint ? (
-            <p className="mt-5 flex items-start justify-center gap-2 text-left text-sm leading-6 text-muted">
+            <p className="mx-auto mt-6 max-w-sm flex gap-2 text-left text-sm leading-6 text-muted">
               <Lightbulb size={16} className="mt-0.5 shrink-0 text-warn" />
               <span>{hint}</span>
             </p>
@@ -428,22 +438,6 @@ function PreviewCard({ card, onContinue }: { card: Card; onContinue: () => void 
       </Button>
     </div>
   )
-}
-
-function previewItalian(card: Card): string {
-  if (card.type === 'cloze' && card.sentence) {
-    return card.sentence.replace(/\{blank\}/gi, card.target || card.term || '…').replace(/\s+/g, ' ').trim()
-  }
-  if (card.type === 'transform') {
-    return `${card.term} → ${card.target || card.term}`
-  }
-  return card.term || card.target
-}
-
-function previewTranslation(card: Card): string {
-  if (card.type === 'vocab') return card.translation || '—'
-  if (card.type === 'cloze') return card.term ? `форма · ${card.term}` : 'Заполните пропуск'
-  return 'Преобразуйте форму'
 }
 
 function CardPrompt({
@@ -540,11 +534,13 @@ function SessionChrome({
   title,
   progress,
   ratio = 0,
+  phase,
   onExit,
 }: {
   title: string
   progress: string
   ratio?: number
+  phase?: string
   onExit: () => void
 }) {
   return (
@@ -555,7 +551,10 @@ function SessionChrome({
         </IconButton>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold">{title}</p>
-          <p className="text-xs text-muted">{progress} карточек</p>
+          <p className="text-xs text-muted">
+            {phase ? `${phase} · ` : ''}
+            {progress} карточек
+          </p>
         </div>
         <SyncBadge />
       </div>
