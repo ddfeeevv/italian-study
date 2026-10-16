@@ -7,15 +7,29 @@ function pickItalianVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice 
   )
 }
 
-/** Text safe to speak without spoiling the answer for the given tier. */
-export function italianSpeechText(card: Card, tier: 1 | 2 = 2): string {
+export type SpeechOptions = {
+  /** Review tier. Defaults to 2 (answer already known). */
+  tier?: 1 | 2
+  /** True after the learner answered — full Italian answer may be spoken. */
+  revealed?: boolean
+}
+
+/**
+ * Italian text safe to speak for the current step.
+ * Before `revealed`, never returns the answer for vocab / cloze blanks.
+ */
+export function italianSpeechText(card: Card, options: SpeechOptions = {}): string {
+  const tier = options.tier ?? 2
+  const revealed = options.revealed ?? tier === 2
+
   if (card.type === 'cloze' && card.sentence) {
-    // Tier 1: don't fill the blank — that is the answer
-    const fill = tier === 2 ? card.target || card.term || '' : '…'
+    const fill = revealed ? card.target || card.term || '' : '…'
     return card.sentence.replace(/\{blank\}/gi, fill).replace(/\s+/g, ' ').trim()
   }
-  // Vocab Tier 1 shows Russian; speaking Italian would reveal the MC answer
-  if (card.type === 'vocab' && tier === 1) return ''
+
+  // Vocab prompt is Russian until answered — speaking Italian would spoil MC
+  if (card.type === 'vocab' && !revealed) return ''
+
   return (card.term || card.target || '').trim()
 }
 

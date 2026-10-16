@@ -142,7 +142,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const applyOp = useCallback(async (op: PendingOp) => {
     if (op.kind === 'upsert-deck') {
       const deck = dataRef.current.decks.find((item) => item.id === op.id)
-      if (!deck) return
+      if (!deck) throw new Error(`Missing local deck for upsert: ${op.id}`)
       const { error } = await supabase.from('decks').upsert(toDeckRow(deck))
       if (error) throw error
       return
@@ -154,7 +154,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     }
     if (op.kind === 'upsert-card') {
       const card = dataRef.current.cards.find((item) => item.id === op.id)
-      if (!card) return
+      if (!card) throw new Error(`Missing local card for upsert: ${op.id}`)
       const { error } = await supabase.from('cards').upsert(toCardRow(card))
       if (error) throw error
       return
@@ -191,6 +191,11 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const hydrate = useCallback(async (userId: string) => {
     setSyncStatus('syncing')
     try {
+      // Push local mutations first while cached/optimistic data is still in memory.
+      // Otherwise a empty remote pull would wipe state and then drop pending upserts.
+      await flushQueue()
+      const pendingLeft = queueRef.current.length > 0
+
       const [decksRes, cardsRes] = await Promise.all([
         supabase.from('decks').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
         supabase.from('cards').select('*').eq('user_id', userId),
@@ -198,16 +203,43 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       if (decksRes.error) throw decksRes.error
       if (cardsRes.error) throw cardsRes.error
 
+      const decks = (decksRes.data ?? []).map(mapDeck)
+      const cards = (cardsRes.data ?? []).map(mapCard)
+      const remoteEmpty = decks.length === 0 && cards.length === 0
+      const localHas =
+        dataRef.current.decks.length > 0 || dataRef.current.cards.length > 0
+
+      // Keep local decks/cards if the server is empty — re-queue upload instead of wiping.
+      if (remoteEmpty && localHas) {
+        const ops: PendingOp[] = [
+          ...dataRef.current.decks.map((deck) => ({ kind: 'upsert-deck' as const, id: deck.id })),
+          ...dataRef.current.cards.map((card) => ({ kind: 'upsert-card' as const, id: card.id })),
+        ]
+        const next = [...queueRef.current]
+        for (const op of ops) {
+          const idx = next.findIndex((item) => item.kind === op.kind && item.id === op.id)
+          if (idx >= 0) next[idx] = op
+          else next.push(op)
+        }
+        queueRef.current = next
+        saveQueue(userId, next)
+        await flushQueue()
+        setReady(true)
+        setSyncStatus(queueRef.current.length > 0 || pendingLeft ? 'error' : 'synced')
+        return
+      }
+
       dispatch({
         type: 'replace',
         data: {
           ...emptyData(loadSettings()),
-          decks: (decksRes.data ?? []).map(mapDeck),
-          cards: (cardsRes.data ?? []).map(mapCard),
+          decks,
+          cards,
         },
       })
       setReady(true)
       await flushQueue()
+      setSyncStatus(queueRef.current.length > 0 ? 'error' : 'synced')
     } catch {
       setReady(true)
       setSyncStatus(navigator.onLine ? 'error' : 'offline')

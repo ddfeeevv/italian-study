@@ -87,17 +87,27 @@ export function SessionView({
     setExplain(null)
   }, [current?.cardId, current?.tier, currentCard?.id])
 
+  const answerRevealed = Boolean(locked || explain)
+
   useEffect(() => {
     if (!current || !currentCard || !settings.autoPlayAudio) return
-    speakItalian(italianSpeechText(currentCard, current.tier))
-  }, [current?.cardId, current?.tier, currentCard?.id, settings.autoPlayAudio])
+    // Before answer: only non-spoiling prompts (cloze with …, transform term). Never vocab.
+    if (!answerRevealed && current.tier === 1) {
+      if (currentCard.type === 'vocab') return
+      speakItalian(italianSpeechText(currentCard, { tier: 1, revealed: false }))
+      return
+    }
+    // After answer or on spelling tier: full Italian
+    speakItalian(italianSpeechText(currentCard, { tier: current.tier, revealed: true }))
+  }, [current?.cardId, current?.tier, currentCard?.id, settings.autoPlayAudio, answerRevealed])
 
   useEffect(() => () => clearAdvanceTimer(), [])
 
   const goNext = (nextRuntime = runtime, immediate = false) => {
     pendingRuntimeRef.current = nextRuntime
     clearAdvanceTimer()
-    const delay = immediate ? 0 : nextRuntime.current ? 480 : 160
+    // Give a beat after correct answers so TTS / speak button are usable
+    const delay = immediate ? 0 : nextRuntime.current ? (settings.autoPlayAudio ? 1100 : 650) : 160
     advanceTimerRef.current = window.setTimeout(() => applyRuntime(nextRuntime), delay)
   }
 
@@ -202,7 +212,10 @@ export function SessionView({
 
       if (event.key === ' ' || event.code === 'Space') {
         if (!current || !currentCard) return
-        const phrase = italianSpeechText(currentCard, current.tier)
+        const phrase = italianSpeechText(currentCard, {
+          tier: current.tier,
+          revealed: Boolean(locked || explain || current.tier === 2),
+        })
         if (!phrase) return
         event.preventDefault()
         speakItalian(phrase)
@@ -291,6 +304,7 @@ export function SessionView({
           value={spellValue}
           status={spellStatus}
           locked={locked}
+          revealed={answerRevealed || current.tier === 2}
           onChange={setSpellValue}
           onSubmit={onSpellSubmit}
         />
@@ -354,6 +368,7 @@ function CardPrompt({
   value,
   status,
   locked,
+  revealed,
   onChange,
   onSubmit,
 }: {
@@ -362,10 +377,11 @@ function CardPrompt({
   value: string
   status: SpellStatus
   locked: boolean
+  revealed: boolean
   onChange: (value: string) => void
   onSubmit: () => void
 }) {
-  const speech = italianSpeechText(card, tier)
+  const speech = italianSpeechText(card, { tier, revealed })
 
   if (card.type === 'cloze' && card.sentence) {
     const [before, after] = splitCloze(card.sentence)
