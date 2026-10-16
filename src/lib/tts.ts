@@ -17,20 +17,22 @@ export type SpeechOptions = {
 /**
  * Italian text safe to speak for the current step.
  * Before `revealed`, never returns the answer for vocab / cloze blanks.
+ * Pass `revealed` explicitly in review; deck lists may omit it (defaults to full phrase).
  */
 export function italianSpeechText(card: Card, options: SpeechOptions = {}): string {
-  const tier = options.tier ?? 2
-  const revealed = options.revealed ?? tier === 2
+  const revealed = options.revealed ?? true
 
   if (card.type === 'cloze' && card.sentence) {
     const fill = revealed ? card.target || card.term || '' : '…'
     return card.sentence.replace(/\{blank\}/gi, fill).replace(/\s+/g, ' ').trim()
   }
 
-  // Vocab prompt is Russian until answered — speaking Italian would spoil MC
+  // Vocab: Russian prompt — Italian answer only after the learner answers
   if (card.type === 'vocab' && !revealed) return ''
 
-  return (card.term || card.target || '').trim()
+  // After answer, prefer the correct form; before answer, only the visible prompt term
+  if (revealed) return (card.target || card.term || '').trim()
+  return (card.term || '').trim()
 }
 
 if (typeof window !== 'undefined' && window.speechSynthesis) {

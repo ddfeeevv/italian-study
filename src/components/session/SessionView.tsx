@@ -91,14 +91,13 @@ export function SessionView({
 
   useEffect(() => {
     if (!current || !currentCard || !settings.autoPlayAudio) return
-    // Before answer: only non-spoiling prompts (cloze with …, transform term). Never vocab.
-    if (!answerRevealed && current.tier === 1) {
-      if (currentCard.type === 'vocab') return
-      speakItalian(italianSpeechText(currentCard, { tier: 1, revealed: false }))
+    if (answerRevealed) {
+      speakItalian(italianSpeechText(currentCard, { tier: current.tier, revealed: true }))
       return
     }
-    // After answer or on spelling tier: full Italian
-    speakItalian(italianSpeechText(currentCard, { tier: current.tier, revealed: true }))
+    // Before answer: never spoil vocab (both MC and spelling). Cloze/transform may speak the prompt only.
+    if (currentCard.type === 'vocab') return
+    speakItalian(italianSpeechText(currentCard, { tier: current.tier, revealed: false }))
   }, [current?.cardId, current?.tier, currentCard?.id, settings.autoPlayAudio, answerRevealed])
 
   useEffect(() => () => clearAdvanceTimer(), [])
@@ -214,7 +213,7 @@ export function SessionView({
         if (!current || !currentCard) return
         const phrase = italianSpeechText(currentCard, {
           tier: current.tier,
-          revealed: Boolean(locked || explain || current.tier === 2),
+          revealed: Boolean(locked || explain),
         })
         if (!phrase) return
         event.preventDefault()
@@ -304,7 +303,7 @@ export function SessionView({
           value={spellValue}
           status={spellStatus}
           locked={locked}
-          revealed={answerRevealed || current.tier === 2}
+          revealed={answerRevealed}
           onChange={setSpellValue}
           onSubmit={onSpellSubmit}
         />
