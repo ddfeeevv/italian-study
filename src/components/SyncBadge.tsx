@@ -21,6 +21,13 @@ export function SyncBadge() {
     <button
       type="button"
       onClick={retrySync}
+      title={
+        syncStatus === 'error'
+          ? 'Синхронизация с облаком не удалась. Нажмите, чтобы повторить. Данные на этом устройстве сохранены.'
+          : syncStatus === 'offline'
+            ? 'Нет сети — правки копятся локально'
+            : 'Статус синхронизации с Supabase'
+      }
       className="inline-flex items-center gap-1.5 rounded-full bg-surface px-2.5 py-1 text-[11px] font-semibold text-muted"
     >
       <span className={`size-2 rounded-full ${DOT[syncStatus]}`} />

@@ -139,6 +139,22 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     void flushQueue()
   }, [])
 
+  const queueAllLocal = useCallback((userId: string) => {
+    const ops: PendingOp[] = [
+      ...dataRef.current.decks.map((deck) => ({ kind: 'upsert-deck' as const, id: deck.id })),
+      ...dataRef.current.cards.map((card) => ({ kind: 'upsert-card' as const, id: card.id })),
+    ]
+    if (ops.length === 0) return
+    const next = [...queueRef.current]
+    for (const op of ops) {
+      const idx = next.findIndex((item) => item.kind === op.kind && item.id === op.id)
+      if (idx >= 0) next[idx] = op
+      else next.push(op)
+    }
+    queueRef.current = next
+    saveQueue(userId, next)
+  }, [])
+
   const applyOp = useCallback(async (op: PendingOp) => {
     if (op.kind === 'upsert-deck') {
       const deck = dataRef.current.decks.find((item) => item.id === op.id)
@@ -155,6 +171,12 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     if (op.kind === 'upsert-card') {
       const card = dataRef.current.cards.find((item) => item.id === op.id)
       if (!card) throw new Error(`Missing local card for upsert: ${op.id}`)
+      // Ensure parent deck exists remotely before the card FK check
+      const deck = dataRef.current.decks.find((item) => item.id === card.deckId)
+      if (deck) {
+        const deckErr = (await supabase.from('decks').upsert(toDeckRow(deck))).error
+        if (deckErr) throw deckErr
+      }
       const { error } = await supabase.from('cards').upsert(toCardRow(card))
       if (error) throw error
       return
@@ -175,15 +197,19 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       return
     }
     setSyncStatus('syncing')
-    const pending = [...queueRef.current]
+    // Decks before cards — otherwise Postgres FK cards_deck_id_fkey fails
+    const pending = sortPendingOps(queueRef.current)
     try {
       for (const op of pending) {
         await applyOp(op)
-        queueRef.current = queueRef.current.filter((item) => item !== op)
+        queueRef.current = queueRef.current.filter(
+          (item) => !(item.kind === op.kind && item.id === op.id),
+        )
         saveQueue(userId, queueRef.current)
       }
       setSyncStatus('synced')
-    } catch {
+    } catch (err) {
+      console.error('[parola] sync failed', err)
       setSyncStatus('error')
     }
   }, [applyOp])
@@ -191,10 +217,14 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const hydrate = useCallback(async (userId: string) => {
     setSyncStatus('syncing')
     try {
-      // Push local mutations first while cached/optimistic data is still in memory.
-      // Otherwise a empty remote pull would wipe state and then drop pending upserts.
+      // Push local mutations first. Never pull-overwrite while the queue still has work.
+      queueAllLocal(userId)
       await flushQueue()
-      const pendingLeft = queueRef.current.length > 0
+      if (queueRef.current.length > 0) {
+        setReady(true)
+        setSyncStatus('error')
+        return
+      }
 
       const [decksRes, cardsRes] = await Promise.all([
         supabase.from('decks').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
@@ -205,27 +235,16 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
       const decks = (decksRes.data ?? []).map(mapDeck)
       const cards = (cardsRes.data ?? []).map(mapCard)
-      const remoteEmpty = decks.length === 0 && cards.length === 0
-      const localHas =
-        dataRef.current.decks.length > 0 || dataRef.current.cards.length > 0
 
-      // Keep local decks/cards if the server is empty — re-queue upload instead of wiping.
-      if (remoteEmpty && localHas) {
-        const ops: PendingOp[] = [
-          ...dataRef.current.decks.map((deck) => ({ kind: 'upsert-deck' as const, id: deck.id })),
-          ...dataRef.current.cards.map((card) => ({ kind: 'upsert-card' as const, id: card.id })),
-        ]
-        const next = [...queueRef.current]
-        for (const op of ops) {
-          const idx = next.findIndex((item) => item.kind === op.kind && item.id === op.id)
-          if (idx >= 0) next[idx] = op
-          else next.push(op)
-        }
-        queueRef.current = next
-        saveQueue(userId, next)
+      // Remote still behind local (partial push) — keep local and retry later
+      if (
+        dataRef.current.cards.length > cards.length ||
+        dataRef.current.decks.length > decks.length
+      ) {
+        queueAllLocal(userId)
         await flushQueue()
         setReady(true)
-        setSyncStatus(queueRef.current.length > 0 || pendingLeft ? 'error' : 'synced')
+        setSyncStatus(queueRef.current.length > 0 ? 'error' : 'synced')
         return
       }
 
@@ -238,13 +257,13 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         },
       })
       setReady(true)
-      await flushQueue()
-      setSyncStatus(queueRef.current.length > 0 ? 'error' : 'synced')
-    } catch {
+      setSyncStatus('synced')
+    } catch (err) {
+      console.error('[parola] hydrate failed', err)
       setReady(true)
       setSyncStatus(navigator.onLine ? 'error' : 'offline')
     }
-  }, [flushQueue])
+  }, [flushQueue, queueAllLocal])
 
   const addDeck = useCallback(
     (input: { title: string; description: string; color?: string }) => {
@@ -283,7 +302,11 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const addCards = useCallback(
     (cards: Card[]) => {
       dispatch({ type: 'add-cards', cards })
-      enqueue(cards.map((card) => ({ kind: 'upsert-card' as const, id: card.id })))
+      const deckIds = [...new Set(cards.map((card) => card.deckId))]
+      enqueue([
+        ...deckIds.map((id) => ({ kind: 'upsert-deck' as const, id })),
+        ...cards.map((card) => ({ kind: 'upsert-card' as const, id: card.id })),
+      ])
     },
     [enqueue],
   )
@@ -310,8 +333,10 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const retrySync = useCallback(() => {
-    if (user) void hydrate(user.id)
-  }, [hydrate, user])
+    if (!user) return
+    queueAllLocal(user.id)
+    void hydrate(user.id)
+  }, [hydrate, queueAllLocal, user])
 
   const cardsByDeck = useCallback(
     (deckId: string) => data.cards.filter((card) => card.deckId === deckId),
@@ -360,4 +385,22 @@ export function useAppStore(): AppStore {
   const ctx = useContext(AppStoreContext)
   if (!ctx) throw new Error('useAppStore must be used within AppStoreProvider')
   return ctx
+}
+
+function sortPendingOps(ops: PendingOp[]): PendingOp[] {
+  const rank = (op: PendingOp): number => {
+    switch (op.kind) {
+      case 'upsert-deck':
+        return 0
+      case 'upsert-card':
+        return 1
+      case 'delete-card':
+        return 2
+      case 'delete-deck':
+        return 3
+      default:
+        return 9
+    }
+  }
+  return [...ops].sort((a, b) => rank(a) - rank(b))
 }
