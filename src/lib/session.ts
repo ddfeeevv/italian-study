@@ -26,6 +26,8 @@ export type SessionRuntime = {
   phase: SessionPhase
   /** Fixed card ids for this session batch */
   batchIds: string[]
+  /** Transform cards without explicit options — skip Tier 1 MC */
+  skipMcIds: string[]
   queue: QueueItem[]
   current: QueueItem | null
   total: number
@@ -47,12 +49,19 @@ function pickBatchSize(available: number): number {
   return Math.min(available, BATCH_SIZE_MIN + Math.floor(Math.random() * (span + 1)))
 }
 
+export function needsMultipleChoice(card: Card): boolean {
+  if ((card.options?.length ?? 0) > 0) return true
+  if (card.type === 'transform') return false
+  return true
+}
+
 export function createSession(cards: Card[]): SessionRuntime {
   const unique = uniqueById(cards)
   if (unique.length === 0) {
     return {
       phase: 'mc',
       batchIds: [],
+      skipMcIds: [],
       queue: [],
       current: null,
       total: 0,
@@ -66,6 +75,7 @@ export function createSession(cards: Card[]): SessionRuntime {
   const batch = shuffle(unique).slice(0, pickBatchSize(unique.length))
   const batchIds = batch.map((card) => card.id)
   const byId = new Map(batch.map((card) => [card.id, card]))
+  const skipMcIds = batch.filter((card) => !needsMultipleChoice(card)).map((card) => card.id)
 
   const previewQueue: QueueItem[] = shuffle(
     batchIds.filter((id) => byId.get(id)?.type === 'vocab'),
@@ -76,6 +86,7 @@ export function createSession(cards: Card[]): SessionRuntime {
     return {
       phase: 'preview',
       batchIds,
+      skipMcIds,
       queue: rest,
       current,
       total: batchIds.length,
@@ -89,6 +100,7 @@ export function createSession(cards: Card[]): SessionRuntime {
   return startMcPhase({
     phase: 'preview',
     batchIds,
+    skipMcIds,
     queue: [],
     current: null,
     total: batchIds.length,
@@ -154,13 +166,28 @@ export function cardAnswer(card: Card): string {
 }
 
 /**
- * MC distractors: Italian production forms only.
- * Prefer `target` from same-type cards in the deck. Never use translation,
- * explanation, notes, or free-form `options` (those often hold Russian glosses).
+ * If `card.options` is set — use those exact choices (shuffled).
+ * Otherwise for vocab/cloze pick Italian `target` forms from other cards.
+ * Transform without options should skip MC entirely (`needsMultipleChoice`).
  */
 export function buildChoices(card: Card, pool: Card[]): string[] {
   const correct = cardAnswer(card).trim()
   const correctKey = normalizeAnswer(correct)
+  const explicit = (card.options ?? []).map((option) => option.trim()).filter(Boolean)
+
+  if (explicit.length > 0) {
+    const options: string[] = []
+    for (const option of explicit) {
+      if (!options.some((item) => normalizeAnswer(item) === normalizeAnswer(option))) {
+        options.push(option)
+      }
+    }
+    // Keep the keyed answer playable if the author omitted it from the list
+    if (correct && !options.some((item) => normalizeAnswer(item) === correctKey)) {
+      options.unshift(correct)
+    }
+    return shuffle(options)
+  }
 
   const fromPool = shuffle(
     pool.filter((item) => item.id !== card.id && item.type === card.type),
@@ -169,10 +196,7 @@ export function buildChoices(card: Card, pool: Card[]): string[] {
     .filter((term) => term.length > 0 && normalizeAnswer(term) !== correctKey)
     .filter(isItalianProductionForm)
 
-  // Same-type targets from the wider deck if the typed pool is thin
-  const fromAnySameType = shuffle(
-    pool.filter((item) => item.id !== card.id),
-  )
+  const fromAny = shuffle(pool.filter((item) => item.id !== card.id))
     .map((item) => (item.target || '').trim())
     .filter((term) => term.length > 0 && normalizeAnswer(term) !== correctKey)
     .filter(isItalianProductionForm)
@@ -181,8 +205,8 @@ export function buildChoices(card: Card, pool: Card[]): string[] {
     (term) => normalizeAnswer(term) !== correctKey && isItalianProductionForm(term),
   )
 
-  const options = [correct]
-  for (const term of [...fromPool, ...fromAnySameType, ...extras]) {
+  const options = correct ? [correct] : []
+  for (const term of [...fromPool, ...fromAny, ...extras]) {
     if (options.length >= 4) break
     if (!options.some((option) => normalizeAnswer(option) === normalizeAnswer(term))) {
       options.push(term)
@@ -231,7 +255,21 @@ export function splitCloze(sentence: string): [string, string] {
 }
 
 function startMcPhase(runtime: SessionRuntime): SessionRuntime {
-  const items: QueueItem[] = shuffle(runtime.batchIds).map((cardId) => ({
+  const skip = new Set(runtime.skipMcIds)
+  // Transform without options auto-clear Tier 1 so spelling can still advance SRS
+  const passedTier1 = uniqueStrings([...runtime.passedTier1, ...runtime.skipMcIds])
+  const mcIds = shuffle(runtime.batchIds.filter((id) => !skip.has(id)))
+
+  if (mcIds.length === 0) {
+    return startSpellPhase({
+      ...runtime,
+      passedTier1,
+      queue: [],
+      current: null,
+    })
+  }
+
+  const items: QueueItem[] = mcIds.map((cardId) => ({
     cardId,
     tier: 1 as const,
   }))
@@ -239,10 +277,15 @@ function startMcPhase(runtime: SessionRuntime): SessionRuntime {
   return {
     ...runtime,
     phase: 'mc',
+    passedTier1,
     queue: rest,
     current: current ?? null,
     status: current ? 'active' : 'complete',
   }
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)]
 }
 
 function startSpellPhase(runtime: SessionRuntime): SessionRuntime {

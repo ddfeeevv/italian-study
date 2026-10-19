@@ -139,14 +139,16 @@ export function AddWordsPage() {
             <p className="text-sm leading-6 text-muted">
               Слова: <code className="rounded bg-surface px-1.5">lavorare - работать</code>
               <br />
-              Пропуск: <code className="rounded bg-surface px-1.5">Noi {'{blank}'} il treno | prendiamo | 1 лицо мн.ч.</code>
+              Форма / пропуск: <code className="rounded bg-surface px-1.5">Prompt | Target | Explanation</code>
               <br />
-              Форма: <code className="rounded bg-surface px-1.5">la casa nuova (plurale) | le case nuove | правило</code>
+              С вариантами: <code className="rounded bg-surface px-1.5">Prompt | Target | a, b, c, d | Explanation</code>
             </p>
             <Textarea
               value={bulk}
               onChange={(event) => setBulk(event.target.value)}
-              placeholder={'lavorare - работать\nNoi {blank} il treno | prendiamo | 1 лицо мн.ч. prendere\nla casa nuova (plurale) | le case nuove | la→le'}
+              placeholder={
+                "lavorare - работать\nNoi {blank} il treno | prendiamo | 1 лицо мн.ч.\nl'amica gentile (мн. число) | le amiche gentili | le amiche gentili, gli amiche gentili, le amiche gentile, i amici gentili | женский род: l'→le"
+              }
             />
             {preview.length > 0 ? (
               <p className="text-sm text-muted">

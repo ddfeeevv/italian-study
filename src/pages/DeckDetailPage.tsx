@@ -238,15 +238,17 @@ function BulkImportSheet({
         <p className="mt-2 text-sm leading-6 text-muted">
           Слова: <code className="rounded bg-surface px-1.5">lavorare - работать</code>
           <br />
-          Пропуск: <code className="rounded bg-surface px-1.5">Noi {'{blank}'} il treno | prendiamo | 1 лицо мн.ч.</code>
+          Форма / пропуск: <code className="rounded bg-surface px-1.5">Prompt | Target | Explanation</code>
           <br />
-          Форма: <code className="rounded bg-surface px-1.5">la casa nuova (plurale) | le case nuove</code>
+          С вариантами: <code className="rounded bg-surface px-1.5">Prompt | Target | a, b, c, d | Explanation</code>
         </p>
         <Textarea
           className="mt-4"
           value={bulk}
           onChange={(event) => setBulk(event.target.value)}
-          placeholder={'lavorare - работать\nscrivere - писать\nNoi {blank} il treno | prendiamo | 1 лицо мн.ч.'}
+          placeholder={
+            "lavorare - работать\nNoi {blank} il treno | prendiamo | 1 лицо мн.ч.\nl'amica gentile (мн. число) | le amiche gentili | le amiche gentili, gli amiche gentili, le amiche gentile, i amici gentili | женский род: l'→le"
+          }
         />
         {preview.length > 0 ? (
           <p className="mt-3 text-sm text-muted">

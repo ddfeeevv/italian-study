@@ -37,23 +37,17 @@ export function parseLine(line: string): ParsedCard | null {
   }
 
   const piped = line.split('|').map((part) => part.trim())
-  if (piped.length >= 2 && /\((plurale|femminile|singolare|maschile)\)/i.test(piped[0])) {
-    return {
-      type: 'transform',
-      term: piped[0],
-      target: piped[1],
-      explanation: piped[2],
-      options: piped[3] ? splitOptions(piped[3]) : undefined,
-    }
-  }
-
-  if (piped.length >= 3 && piped[0] && piped[1]) {
-    return {
-      type: 'transform',
-      term: piped[0],
-      target: piped[1],
-      explanation: piped[2],
-      options: piped[3] ? splitOptions(piped[3]) : undefined,
+  if (piped.length >= 2 && piped[0] && piped[1]) {
+    // Grammar / transform style: Prompt | Target [| Options] [| Explanation]
+    // Detect transform-ish prompts (gender/number cues) or any 3–4 column pipe row
+    // that is not vocab dash-syntax.
+    if (
+      piped.length >= 3 ||
+      /\((plurale|femminile|singolare|maschile|мн\.?\s*ч|ед\.?\s*ч|ж\.?\s*р|м\.?\s*р)[^)]*\)/i.test(
+        piped[0],
+      )
+    ) {
+      return parsePromptTargetRow(piped, 'transform')
     }
   }
 
@@ -81,44 +75,78 @@ function parseTyped(type: CardType, rest: string): ParsedCard | null {
   if (type === 'cloze') return parseCloze(rest)
   if (type === 'transform') {
     const parts = rest.split('|').map((part) => part.trim())
-    if (parts.length < 2) return null
-    return {
-      type: 'transform',
-      term: parts[0],
-      target: parts[1],
-      explanation: parts[2],
-      options: parts[3] ? splitOptions(parts[3]) : undefined,
-    }
+    if (parts.length < 2 || !parts[0] || !parts[1]) return null
+    return parsePromptTargetRow(parts, 'transform')
   }
   return parseVocab(rest)
 }
 
-function parseCloze(line: string): ParsedCard | null {
-  const parts = line.split('|').map((part) => part.trim())
-  const sentenceRaw = parts[0]
-  if (!sentenceRaw || !/\{blank\}/i.test(sentenceRaw)) return null
-  const hintMatch = sentenceRaw.match(/\(([^)]+)\)\s*$/)
-  const sentence = sentenceRaw.replace(/\s*\(([^)]+)\)\s*$/, '').trim()
-  const target = parts[1] ?? ''
-  let explanation = parts[2] || undefined
+/**
+ * Shared pipe columns:
+ * 2: Prompt | Target
+ * 3: Prompt | Target | Explanation
+ * 4: Prompt | Target | Options (comma-separated) | Explanation
+ */
+function parsePromptTargetRow(
+  parts: string[],
+  type: 'transform' | 'cloze',
+): ParsedCard {
+  const prompt = parts[0]
+  const target = parts[1]
   let options: string[] | undefined
-  if (parts[3]) {
-    options = splitOptions(parts[3])
-  } else if (parts[2]?.includes(',')) {
+  let explanation: string | undefined
+
+  if (parts.length >= 4) {
     options = splitOptions(parts[2])
-    explanation = undefined
+    explanation = parts[3] || undefined
+  } else if (parts.length === 3) {
+    explanation = parts[2] || undefined
   }
+
+  if (type === 'cloze') {
+    const hintMatch = prompt.match(/\(([^)]+)\)\s*$/)
+    const sentence = prompt.replace(/\s*\(([^)]+)\)\s*$/, '').trim()
+    return {
+      type: 'cloze',
+      term: hintMatch?.[1] ?? '',
+      sentence,
+      target,
+      options,
+      explanation,
+    }
+  }
+
   return {
-    type: 'cloze',
-    term: hintMatch?.[1] ?? target,
-    sentence,
+    type: 'transform',
+    term: prompt,
     target,
-    explanation,
     options,
+    explanation,
   }
 }
 
+function parseCloze(line: string): ParsedCard | null {
+  const parts = line.split('|').map((part) => part.trim())
+  if (!parts[0] || !/\{blank\}/i.test(parts[0])) return null
+  if (!parts[1]) return null
+  return parsePromptTargetRow(parts, 'cloze')
+}
+
 function parseVocab(line: string): ParsedCard | null {
+  // Also allow vocab via pipes: term | translation [| notes]
+  const piped = line.split('|').map((part) => part.trim())
+  if (piped.length === 2 && piped[0] && piped[1] && !/\{blank\}/i.test(piped[0])) {
+    // Ambiguous with transform 2-col — treat as vocab only when no morphology cue
+    if (!/\([^)]+\)/.test(piped[0])) {
+      return {
+        type: 'vocab',
+        term: piped[0],
+        translation: piped[1],
+        target: piped[0],
+      }
+    }
+  }
+
   const dashed = line.match(/^(.+?)\s+[-–—]\s+(.+)$/)
   if (dashed) {
     const noteMatch = dashed[2].match(/^(.*?)\s*\((.+)\)\s*$/)
@@ -158,7 +186,7 @@ function parseVocab(line: string): ParsedCard | null {
 
 function splitOptions(raw: string): string[] {
   return raw
-    .split(/[,/]/)
+    .split(',')
     .map((part) => part.trim())
     .filter(Boolean)
 }
