@@ -1,20 +1,23 @@
 import { LogOut, Moon, Sun, Volume2 } from 'lucide-react'
 import { useRef, useState, type FormEvent } from 'react'
 import { Button, Card, Field, Input, Page } from '../components/ui'
+import { useI18n } from '../i18n/translate'
 import { masteredCount } from '../lib/srs'
+import { cardsInSubject } from '../lib/subjects'
 import { useAppStore } from '../store/app-store'
 import { useAuth } from '../store/auth-store'
 import type { ThemePreference } from '../types/models'
 
-const THEMES: Array<{ id: ThemePreference; label: string }> = [
-  { id: 'light', label: 'Светлая' },
-  { id: 'dark', label: 'Тёмная' },
-  { id: 'system', label: 'Система' },
-]
-
 export function AccountPage() {
+  const { t } = useI18n()
   const { user, signOut } = useAuth()
-  const { cards, settings, setSettings } = useAppStore()
+  const themes: Array<{ id: ThemePreference; label: string }> = [
+    { id: 'light', label: t('account.themeLight') },
+    { id: 'dark', label: t('account.themeDark') },
+    { id: 'system', label: t('account.themeSystem') },
+  ]
+  const { cards, decks, settings, setSettings, activeSubject } = useAppStore()
+  const subjectCards = cardsInSubject(cards, decks, activeSubject?.id)
   const securityLock = useRef(false)
   const [securityBusy, setSecurityBusy] = useState(false)
 
@@ -33,28 +36,26 @@ export function AccountPage() {
   return (
     <Page>
       <header className="mb-6 pt-2">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">Аккаунт</p>
-        <h1 className="mt-1 font-display text-3xl lg:text-4xl">Профиль</h1>
+        <h1 className="font-display text-3xl lg:text-4xl">{t('account.title')}</h1>
         <p className="mt-2 truncate text-sm text-muted">{user?.email}</p>
         {user?.new_email ? (
           <p className="mt-2 text-sm leading-6 text-muted">
-            Ждёт подтверждения: {user.new_email}. Почта сменится после ссылок из писем на новый и текущий
-            адрес.
+            {t('account.pendingEmail', { email: user.new_email })}
           </p>
         ) : null}
       </header>
 
-      <div className="grid items-start gap-4 lg:grid-cols-2">
-        <Card className="grid grid-cols-3 gap-3 px-4 py-5 text-center lg:col-span-2 lg:px-8 lg:py-8">
-          <Stat value={cards.length} label="карточек" />
-          <Stat value={masteredCount(cards)} label="освоено" />
-          <Stat value={cards.filter((card) => card.stage > 0).length} label="в работе" />
-        </Card>
+      <Card className="grid grid-cols-3 gap-3 px-4 py-5 text-center lg:px-8 lg:py-8">
+        <Stat value={subjectCards.length} label={t('account.cards')} />
+        <Stat value={masteredCount(subjectCards)} label={t('account.mastered')} />
+        <Stat value={subjectCards.filter((card) => card.stage > 0).length} label={t('account.working')} />
+      </Card>
 
-        <Card className="px-4 py-4">
-          <p className="mb-3 text-sm font-semibold">Тема</p>
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <Card className="flex h-full flex-col justify-center px-4 py-4">
+          <p className="mb-3 text-sm font-semibold">{t('account.theme')}</p>
           <div className="grid grid-cols-3 gap-1 rounded-2xl bg-surface p-1">
-            {THEMES.map((theme) => (
+            {themes.map((theme) => (
               <button
                 key={theme.id}
                 type="button"
@@ -72,7 +73,7 @@ export function AccountPage() {
           </div>
         </Card>
 
-        <Card className="px-4 py-4">
+        <Card className="flex h-full items-center px-4 py-4">
           <button
             type="button"
             role="switch"
@@ -84,10 +85,8 @@ export function AccountPage() {
               <Volume2 size={18} />
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block text-sm font-semibold">Автопроизношение</span>
-              <span className="block text-xs leading-5 text-muted">
-                Озвучивать итальянский при открытии карточки. Пробел — повтор.
-              </span>
+              <span className="block text-sm font-semibold">{t('account.autoplay')}</span>
+              <span className="block text-xs leading-5 text-muted">{t('account.autoplayHint')}</span>
             </span>
             <span
               className={
@@ -106,19 +105,23 @@ export function AccountPage() {
             </span>
           </button>
         </Card>
-
-        <EmailChangeForm email={user?.email ?? ''} locked={securityBusy} onBusy={setSecurityLock} />
-        <PasswordChangeForm email={user?.email ?? ''} locked={securityBusy} onBusy={setSecurityLock} />
-
-        <Button className="w-full lg:w-fit lg:px-8" variant="secondary" onClick={() => void signOut()}>
-          <LogOut size={16} />
-          Выйти
-        </Button>
       </div>
 
+      <div className="mt-8 grid items-start gap-4 border-t border-line pt-8 lg:grid-cols-2">
+        <EmailChangeForm email={user?.email ?? ''} locked={securityBusy} onBusy={setSecurityLock} />
+        <PasswordChangeForm email={user?.email ?? ''} locked={securityBusy} onBusy={setSecurityLock} />
+      </div>
+
+      <Button className="mt-8 w-full lg:w-fit lg:px-8" variant="secondary" onClick={() => void signOut()}>
+        <LogOut size={16} />
+        {t('account.signOut')}
+      </Button>
+
       <p className="mx-auto mt-8 max-w-2xl text-center text-xs leading-5 text-muted lg:mx-0 lg:text-left">
-        Интервалы: 1 → 3 → 7 → 14 → 30 дней. Ошибка сбрасывает карточку и оставляет её в сессии.
-        Прогресс пишется в Supabase и кэшируется на устройстве.
+        {t('common.contact')}:{' '}
+        <a className="text-accent underline-offset-2 hover:underline" href="mailto:d.dfeeevv@gmail.com">
+          d.dfeeevv@gmail.com
+        </a>
       </p>
     </Page>
   )
@@ -133,6 +136,7 @@ function EmailChangeForm({
   locked: boolean
   onBusy: (busy: boolean) => boolean
 }) {
+  const { t } = useI18n()
   const { changeEmail } = useAuth()
   const [nextEmail, setNextEmail] = useState('')
   const [currentPassword, setCurrentPassword] = useState('')
@@ -146,7 +150,7 @@ function EmailChangeForm({
     try {
       error = await changeEmail(currentPassword, nextEmail)
     } catch {
-      error = 'Не удалось обновить данные. Попробуйте ещё раз.'
+      error = t('auth.updateFailed')
     } finally {
       setCurrentPassword('')
       onBusy(false)
@@ -158,19 +162,17 @@ function EmailChangeForm({
     setNextEmail('')
     setMessage({
       tone: 'ok',
-      text: 'Письма отправлены. Новый адрес заработает после подтверждения ссылок из обоих ящиков.',
+      text: t('account.emailSent'),
     })
   }
 
   return (
     <Card className="px-4 py-4">
-      <p className="text-sm font-semibold">Почта</p>
-      <p className="mt-1 text-xs leading-5 text-muted">
-        Нужен текущий пароль. Адрес сменится после подтверждения ссылками из писем на новую и текущую почту.
-      </p>
+      <p className="text-sm font-semibold">{t('account.email')}</p>
+      <p className="mt-1 text-xs leading-5 text-muted">{t('account.emailHint')}</p>
       <form className="mt-4 space-y-4" onSubmit={(event) => void submit(event)}>
         <AccountUsername email={email} />
-        <Field label="Новая почта">
+        <Field label={t('account.newEmail')}>
           <Input
             type="email"
             name="new-email"
@@ -183,7 +185,7 @@ function EmailChangeForm({
             placeholder="new@email.com"
           />
         </Field>
-        <Field label="Текущий пароль">
+        <Field label={t('account.currentPassword')}>
           <Input
             type="password"
             name="current-password"
@@ -193,7 +195,7 @@ function EmailChangeForm({
           />
         </Field>
         <Button className="w-full" type="submit" disabled={locked || !nextEmail || !currentPassword}>
-          Отправить подтверждение
+          {t('account.sendConfirm')}
         </Button>
         {message ? <NoticeText notice={message} /> : null}
       </form>
@@ -210,6 +212,7 @@ function PasswordChangeForm({
   locked: boolean
   onBusy: (busy: boolean) => boolean
 }) {
+  const { t } = useI18n()
   const { changePassword } = useAuth()
   const [currentPassword, setCurrentPassword] = useState('')
   const [nextPassword, setNextPassword] = useState('')
@@ -220,7 +223,7 @@ function PasswordChangeForm({
     event.preventDefault()
     if (locked) return
     if (nextPassword !== confirmPassword) {
-      setMessage({ tone: 'err', text: 'Новый пароль и повтор не совпадают' })
+      setMessage({ tone: 'err', text: t('account.passwordMismatch') })
       return
     }
     if (!onBusy(true)) return
@@ -229,7 +232,7 @@ function PasswordChangeForm({
     try {
       error = await changePassword(currentPassword, nextPassword)
     } catch {
-      error = 'Не удалось обновить данные. Попробуйте ещё раз.'
+      error = t('auth.updateFailed')
     } finally {
       setCurrentPassword('')
       onBusy(false)
@@ -240,18 +243,16 @@ function PasswordChangeForm({
     }
     setNextPassword('')
     setConfirmPassword('')
-    setMessage({ tone: 'ok', text: 'Пароль обновлён. Другие сессии завершены.' })
+    setMessage({ tone: 'ok', text: t('account.passwordUpdated') })
   }
 
   return (
     <Card className="px-4 py-4">
-      <p className="text-sm font-semibold">Пароль</p>
-      <p className="mt-1 text-xs leading-5 text-muted">
-        Минимум 8 символов. После смены этот браузер останется в аккаунте, остальные сессии завершатся.
-      </p>
+      <p className="text-sm font-semibold">{t('account.password')}</p>
+      <p className="mt-1 text-xs leading-5 text-muted">{t('account.passwordHint')}</p>
       <form className="mt-4 space-y-4" onSubmit={(event) => void submit(event)}>
         <AccountUsername email={email} />
-        <Field label="Текущий пароль">
+        <Field label={t('account.currentPassword')}>
           <Input
             type="password"
             name="current-password"
@@ -260,7 +261,7 @@ function PasswordChangeForm({
             onChange={(event) => setCurrentPassword(event.target.value)}
           />
         </Field>
-        <Field label="Новый пароль">
+        <Field label={t('account.newPassword')}>
           <Input
             type="password"
             name="new-password"
@@ -269,7 +270,7 @@ function PasswordChangeForm({
             onChange={(event) => setNextPassword(event.target.value)}
           />
         </Field>
-        <Field label="Повтор нового пароля">
+        <Field label={t('account.repeatPassword')}>
           <Input
             type="password"
             name="confirm-password"
@@ -283,7 +284,7 @@ function PasswordChangeForm({
           type="submit"
           disabled={locked || !currentPassword || !nextPassword || !confirmPassword}
         >
-          Сменить пароль
+          {t('account.changePassword')}
         </Button>
         {message ? <NoticeText notice={message} /> : null}
       </form>

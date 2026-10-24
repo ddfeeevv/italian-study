@@ -1,12 +1,6 @@
+import { useI18n } from '../i18n/translate'
 import { useAppStore } from '../store/app-store'
 import type { SyncStatus } from '../types/models'
-
-const LABEL: Record<SyncStatus, string> = {
-  synced: 'Synced',
-  syncing: 'Syncing',
-  offline: 'Offline',
-  error: 'Ошибка',
-}
 
 const DOT: Record<SyncStatus, string> = {
   synced: 'bg-success',
@@ -15,8 +9,15 @@ const DOT: Record<SyncStatus, string> = {
   error: 'bg-danger',
 }
 
-export function SyncBadge() {
+export function SyncBadge({ compact = false }: { compact?: boolean }) {
+  const { t } = useI18n()
   const { syncStatus, syncError, retrySync } = useAppStore()
+  const label: Record<SyncStatus, string> = {
+    synced: t('sync.synced'),
+    syncing: t('sync.syncing'),
+    offline: t('sync.offline'),
+    error: t('sync.error'),
+  }
   return (
     <button
       type="button"
@@ -24,18 +25,23 @@ export function SyncBadge() {
       title={
         syncStatus === 'error'
           ? syncError
-            ? `Синк не удался: ${syncError}. Нажмите, чтобы повторить. Локальные данные на месте.`
-            : 'Синхронизация с облаком не удалась. Нажмите, чтобы повторить.'
+            ? t('sync.errorDetail', { error: syncError })
+            : t('sync.errorPlain')
           : syncStatus === 'offline'
-            ? 'Нет сети — правки копятся локально'
+            ? t('sync.offlineHint')
             : syncStatus === 'syncing'
-              ? 'Идёт отправка в Supabase…'
-              : 'Статус синхронизации с Supabase'
+              ? t('sync.syncingHint')
+              : t('sync.okHint')
       }
-      className="inline-flex items-center gap-1.5 rounded-full bg-surface px-2.5 py-1 text-[11px] font-semibold text-muted"
+      aria-label={label[syncStatus]}
+      className={
+        compact
+          ? 'inline-flex size-10 items-center justify-center rounded-full bg-surface'
+          : 'inline-flex items-center gap-1.5 rounded-full bg-surface px-2.5 py-1 text-[11px] font-semibold text-muted'
+      }
     >
-      <span className={`size-2 rounded-full ${DOT[syncStatus]}`} />
-      {LABEL[syncStatus]}
+      <span className={`rounded-full ${DOT[syncStatus]} ${compact ? 'size-2.5' : 'size-2'}`} />
+      {compact ? null : label[syncStatus]}
     </button>
   )
 }

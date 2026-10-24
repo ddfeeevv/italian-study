@@ -1,18 +1,22 @@
-import { ChevronRight, Plus } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Button, Card, EmptyState, IconButton, Page } from '../components/ui'
+import { Button, EmptyState, IconButton, List, Page } from '../components/ui'
+import { useI18n } from '../i18n/translate'
 import { exerciseCards } from '../lib/srs'
+import { decksInSubject } from '../lib/subjects'
 import { useAppStore } from '../store/app-store'
 import { DeckForm } from './DecksPage'
 
 const FALLBACK_COLOR = '#3D5A80'
 
 export function ExercisesPage() {
-  const { decks, cards } = useAppStore()
+  const { t, countInline } = useI18n()
+  const { decks, cards, activeSubject } = useAppStore()
+  const visible = decksInSubject(decks, activeSubject?.id)
   const [creating, setCreating] = useState(false)
-  const sets = decks.filter((deck) => deck.kind === 'exercise')
-  const leftover = decks
+  const sets = visible.filter((deck) => deck.kind === 'exercise')
+  const leftover = visible
     .filter((deck) => deck.kind !== 'exercise')
     .map((deck) => ({
       deck,
@@ -22,70 +26,73 @@ export function ExercisesPage() {
 
   return (
     <Page>
-      <header className="mb-6 flex items-end justify-between pt-2">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">Грамматика</p>
-          <h1 className="mt-1 font-display text-3xl lg:text-4xl">Упражнения</h1>
-        </div>
+      <header className="mb-6 flex items-end justify-between gap-3 pt-2">
+        <h1 className="font-display text-3xl lg:text-4xl">{t('exercises.title')}</h1>
         <div className="lg:hidden">
-          <IconButton label="Новое упражнение" onClick={() => setCreating(true)}>
+          <IconButton label={t('exercises.new')} onClick={() => setCreating(true)}>
             <Plus size={22} />
           </IconButton>
         </div>
         <div className="hidden lg:block">
           <Button onClick={() => setCreating(true)}>
             <Plus size={18} />
-            Новое упражнение
+            {t('exercises.new')}
           </Button>
         </div>
       </header>
       <p className="mb-6 text-sm leading-6 text-muted">
-        Пропуски и формы. Делаются один раз и не возвращаются по расписанию — открыть снова можно когда захотите.
+        {t('exercises.lead')}
       </p>
 
       {sets.length === 0 && leftover.length === 0 ? (
         <EmptyState
-          title="Пока пусто"
-          text="Создайте упражнение и добавьте в него пропуски или формы."
-          action={<Button onClick={() => setCreating(true)}>Новое упражнение</Button>}
+          title={t('decks.emptyTitle')}
+          text={t('exercises.emptyText')}
+          action={<Button onClick={() => setCreating(true)}>{t('exercises.new')}</Button>}
         />
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <List>
           {sets.map((deck) => {
             const count = exerciseCards(cards.filter((card) => card.deckId === deck.id)).length
             return (
-              <Link key={deck.id} to={`/exercises/${deck.id}`} className="block h-full">
-                <Card className="flex h-full items-center gap-4 px-4 py-4 transition hover:border-accent active:scale-[0.99]">
-                  <span
-                    className="size-12 shrink-0 rounded-2xl"
-                    style={{ background: deck.color ?? FALLBACK_COLOR }}
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-semibold">{deck.title}</span>
-                    <span className="mt-0.5 block truncate text-sm text-muted">
-                      {count} {countLabel(count)}
-                      {deck.description ? ` · ${deck.description}` : ''}
-                    </span>
+              <Link
+                key={deck.id}
+                to={`/exercises/${deck.id}`}
+                className="flex min-h-14 items-center gap-3 px-4 py-3 transition hover:bg-surface"
+              >
+                <span
+                  className="size-2.5 shrink-0 rounded-full"
+                  style={{ background: deck.color ?? FALLBACK_COLOR }}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-semibold">{deck.title}</span>
+                  <span className="mt-0.5 block truncate text-sm text-muted">
+                    {countInline('tasks', count)}
+                    {deck.description ? ` · ${deck.description}` : ''}
                   </span>
-                  <ChevronRight size={18} className="text-muted" />
-                </Card>
+                </span>
               </Link>
             )
           })}
           {leftover.map(({ deck, count }) => (
-            <Link key={deck.id} to={`/exercises/${deck.id}`} className="block h-full">
-              <Card className="flex h-full items-center gap-4 px-4 py-4 transition hover:border-accent">
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-semibold">{deck.title}</span>
-                  <span className="mt-0.5 block text-sm text-muted">
-                    {count} {countLabel(count)} из колоды
-                  </span>
+            <Link
+              key={deck.id}
+              to={`/exercises/${deck.id}`}
+              className="flex min-h-14 items-center gap-3 px-4 py-3 transition hover:bg-surface"
+            >
+              <span
+                className="size-2.5 shrink-0 rounded-full"
+                style={{ background: deck.color ?? FALLBACK_COLOR }}
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-semibold">{deck.title}</span>
+                <span className="mt-0.5 block truncate text-sm text-muted">
+                  {t('exercises.fromDeck', { items: countInline('tasks', count) })}
                 </span>
-                <ChevronRight size={18} className="text-muted" />
-              </Card>
+              </span>
             </Link>
           ))}
-        </div>
+        </List>
       )}
 
       {creating ? (
@@ -95,10 +102,3 @@ export function ExercisesPage() {
   )
 }
 
-function countLabel(count: number): string {
-  const mod10 = count % 10
-  const mod100 = count % 100
-  if (mod10 === 1 && mod100 !== 11) return 'задание'
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'задания'
-  return 'заданий'
-}

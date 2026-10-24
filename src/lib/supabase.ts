@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import type { CardType, Stage } from '../types/models'
+import type { CardType, Script, Stage, SubjectKind } from '../types/models'
 
 export const supabaseUrl = import.meta.env.VITE_SUPABASE_URL ?? ''
 export const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY ?? ''
@@ -8,12 +8,27 @@ export const supabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey)
 const url = supabaseUrl || 'https://xxzsivlzbiktxjmdadkr.supabase.co'
 const anonKey = supabaseAnonKey || 'public-anon-key'
 
+export type SubjectRow = {
+  id: string
+  user_id: string
+  title: string
+  kind: SubjectKind
+  locale: string | null
+  accents: string[]
+  answer_script: Script
+  prompt_script: Script
+  speech_label: string
+  preset_id: string | null
+  created_at: string
+}
+
 export type DeckRow = {
   id: string
   user_id: string
   title: string
   description: string
   color: string | null
+  subject_id?: string | null
   created_at: string
 }
 
@@ -37,6 +52,12 @@ export type CardRow = {
 export type Database = {
   public: {
     Tables: {
+      subjects: {
+        Row: SubjectRow
+        Insert: Partial<SubjectRow> & Pick<SubjectRow, 'user_id' | 'title'>
+        Update: Partial<SubjectRow>
+        Relationships: []
+      }
       decks: {
         Row: DeckRow
         Insert: Partial<DeckRow> & Pick<DeckRow, 'user_id' | 'title'>

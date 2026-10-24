@@ -1,5 +1,6 @@
 import type { Card, Deck } from '../types/models'
 import { needsIntroduction } from './srs'
+import { isProductionForm, productionProfile, writtenScript, type ProductionProfile, type WrittenScript } from './subjects'
 import { insertLater, shuffle } from './utils'
 
 /** Session takes one batch of this many cards (clamped to available). */
@@ -38,12 +39,6 @@ export type SessionRuntime = {
   /** This batch still has a first-meeting card, so phase 1 is the introduction. */
   hasPreview: boolean
   status: 'active' | 'complete' | 'empty'
-}
-
-const FALLBACKS: Record<Card['type'], string[]> = {
-  vocab: ['ciao', 'grazie', 'prego', 'bene', 'oggi', 'sempre', 'ancora', 'perché'],
-  cloze: ['prendo', 'prendiamo', 'prendete', 'prendono', 'parlo', 'parliamo', 'il', 'lo', 'la', 'gli'],
-  transform: ['le case nuove', 'i ragazzi alti', 'gli amici cari', 'le amiche nuove', 'questi libri'],
 }
 
 function pickBatchSize(available: number): number {
@@ -197,11 +192,19 @@ export function cardAnswer(card: Card): string {
   return card.target || card.term
 }
 
-/** Other decks of the same kind stand in for "subject" until decks have one. */
+/** Other decks of the same subject and kind supply distractors. */
 export function sameKindPool(card: Card, cards: Card[], decks: Deck[]): Card[] {
-  const kinds = new Map(decks.map((deck) => [deck.id, deck.kind === 'exercise' ? 'exercise' : 'words']))
-  const kind = kinds.get(card.deckId) ?? 'words'
-  return cards.filter((item) => (kinds.get(item.deckId) ?? 'words') === kind)
+  const byId = new Map(decks.map((deck) => [deck.id, deck]))
+  const deck = byId.get(card.deckId)
+  const kind = deck?.kind === 'exercise' ? 'exercise' : 'words'
+  const subjectId = deck?.subjectId
+  return cards.filter((item) => {
+    const other = byId.get(item.deckId)
+    const otherKind = other?.kind === 'exercise' ? 'exercise' : 'words'
+    if (otherKind !== kind) return false
+    if (subjectId && other?.subjectId && other.subjectId !== subjectId) return false
+    return true
+  })
 }
 
 const MC_OPTION_COUNT = 4
@@ -209,8 +212,6 @@ const HONEST_DISTRACTORS = MC_OPTION_COUNT - 1
 /** First token at most this long can be a repeated particle ("il", "the", "der"). */
 const SHORT_TOKEN_MAX = 3
 const SUFFIX_LENGTHS = [4, 3, 2] as const
-
-type WrittenScript = 'latin' | 'cyrillic' | 'digit' | 'other'
 
 type AnswerForm = {
   raw: string
@@ -231,7 +232,12 @@ type AnswerForm = {
  * falls back to the previous same-deck selection.
  * Transform without options should skip MC entirely (`needsMultipleChoice`).
  */
-export function buildChoices(card: Card, pool: Card[], subjectPool: Card[] = pool): string[] {
+export function buildChoices(
+  card: Card,
+  pool: Card[],
+  subjectPool: Card[] = pool,
+  profile: ProductionProfile = productionProfile(null),
+): string[] {
   const correct = cardAnswer(card).trim()
   const correctKey = normalizeAnswer(correct)
   const explicit = (card.options ?? []).map((option) => option.trim()).filter(Boolean)
@@ -250,29 +256,35 @@ export function buildChoices(card: Card, pool: Card[], subjectPool: Card[] = poo
     return shuffle(options)
   }
 
-  const honest = honestDistractors(correct, card.id, subjectPool)
+  const honest = honestDistractors(correct, card.id, subjectPool, profile)
   if (honest.length >= HONEST_DISTRACTORS) {
     return shuffle([correct, ...shuffle(honest).slice(0, HONEST_DISTRACTORS)])
   }
 
-  return legacyChoices(card, pool, correct, correctKey)
+  return legacyChoices(card, pool, correct, correctKey, profile)
 }
 
-function legacyChoices(card: Card, pool: Card[], correct: string, correctKey: string): string[] {
+function legacyChoices(
+  card: Card,
+  pool: Card[],
+  correct: string,
+  correctKey: string,
+  profile: ProductionProfile,
+): string[] {
   const fromPool = shuffle(
     pool.filter((item) => item.id !== card.id && item.type === card.type),
   )
     .map((item) => (item.target || '').trim())
     .filter((term) => term.length > 0 && normalizeAnswer(term) !== correctKey)
-    .filter(isItalianProductionForm)
+    .filter((term) => isProductionForm(term, profile))
 
   const fromAny = shuffle(pool.filter((item) => item.id !== card.id))
     .map((item) => (item.target || '').trim())
     .filter((term) => term.length > 0 && normalizeAnswer(term) !== correctKey)
-    .filter(isItalianProductionForm)
+    .filter((term) => isProductionForm(term, profile))
 
-  const extras = FALLBACKS[card.type].filter(
-    (term) => normalizeAnswer(term) !== correctKey && isItalianProductionForm(term),
+  const extras = profile.fallbacks[card.type].filter(
+    (term) => normalizeAnswer(term) !== correctKey && isProductionForm(term, profile),
   )
 
   const options = correct ? [correct] : []
@@ -292,8 +304,8 @@ function legacyChoices(card: Card, pool: Card[], correct: string, correctKey: st
  * apostrophe particle such as "l'") is the group. Otherwise the longest shared
  * ending that still has three neighbors is the group.
  */
-function honestDistractors(correct: string, cardId: string, pool: Card[]): string[] {
-  if (!correct || !isItalianProductionForm(correct)) return []
+function honestDistractors(correct: string, cardId: string, pool: Card[], profile: ProductionProfile): string[] {
+  if (!correct || !isProductionForm(correct, profile)) return []
   const particles = repeatedParticles([
     correct,
     ...pool.filter((item) => item.id !== cardId).map((item) => (item.target || '').trim()),
@@ -301,7 +313,7 @@ function honestDistractors(correct: string, cardId: string, pool: Card[]): strin
   const answer = answerForm(correct, particles)
   if (!answer) return []
 
-  const forms = distinctForms(pool, cardId, normalizeAnswer(correct), particles)
+  const forms = distinctForms(pool, cardId, normalizeAnswer(correct), particles, profile)
   const close = forms.filter((form) => sameSlot(answer, form) && lengthClose(form.length, answer.length))
   if (answer.first && close.length >= HONEST_DISTRACTORS) {
     return close.map((form) => form.raw)
@@ -317,13 +329,14 @@ function distinctForms(
   cardId: string,
   correctKey: string,
   particles: Set<string>,
+  profile: ProductionProfile,
 ): AnswerForm[] {
   const seen = new Set<string>()
   const forms: AnswerForm[] = []
   for (const item of pool) {
     if (item.id === cardId) continue
     const raw = (item.target || '').trim()
-    if (!raw || !isItalianProductionForm(raw)) continue
+    if (!raw || !isProductionForm(raw, profile)) continue
     const key = normalizeAnswer(raw)
     if (!key || key === correctKey || seen.has(key)) continue
     const form = answerForm(raw, particles)
@@ -394,20 +407,6 @@ function tokenCore(token: string): string {
   return stripDiacritics(token.toLowerCase()).replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')
 }
 
-function writtenScript(value: string): WrittenScript {
-  const letters = value.match(/\p{L}/gu) ?? []
-  if (letters.length === 0) return /\p{N}/u.test(value) ? 'digit' : 'other'
-  let latin = 0
-  let cyrillic = 0
-  for (const char of letters) {
-    if (/\p{Script=Cyrillic}/u.test(char)) cyrillic += 1
-    else if (/\p{Script=Latin}/u.test(char)) latin += 1
-  }
-  if (cyrillic > latin) return 'cyrillic'
-  if (latin > 0) return 'latin'
-  return 'other'
-}
-
 function sameSlot(answer: AnswerForm, form: AnswerForm): boolean {
   return form.script === answer.script && form.wordCount === answer.wordCount && form.first === answer.first
 }
@@ -418,38 +417,38 @@ function lengthClose(length: number, anchor: number): boolean {
   return Math.max(length, anchor) / shorter <= 1.75
 }
 
-/** Reject Cyrillic glosses / long explanations that must never appear as MC options. */
+/** Italian answers: Latin production forms, never a Russian gloss. */
 export function isItalianProductionForm(value: string): boolean {
-  const v = value.trim()
-  if (!v || v.length > 48) return false
-  if (/[а-яёА-ЯЁ]/.test(v)) return false
-  if (/^(от|из|для)\s+/i.test(v)) return false
-  // "мы (noi) понимаем", "noi = мы", etc.
-  if (/\([^)]{0,12}\)/.test(v) && /\s/.test(v) && v.split(/\s+/).length >= 3) return false
-  return true
+  return isProductionForm(value, productionProfile(null))
 }
 
-export function normalizeAnswer(value: string): string {
-  return value.trim().replace(/\s+/g, ' ').toLowerCase()
+export function normalizeAnswer(value: string, locale?: string | null): string {
+  const compact = value.trim().replace(/\s+/g, ' ')
+  if (locale?.toLowerCase().startsWith('tr')) return compact.toLocaleLowerCase('tr')
+  return compact.toLowerCase()
 }
 
 export function stripDiacritics(value: string): string {
   return value.normalize('NFD').replace(/\p{M}/gu, '')
 }
 
+/** ß/ss so a missing eszett still counts as the same German word. */
+function foldEquivalents(value: string): string {
+  return value.replace(/ß/g, 'ss')
+}
+
 export function checkSpelling(
   input: string,
   expectedRaw: string,
+  locale?: string | null,
 ): 'exact' | 'accent' | 'wrong' {
-  const answer = normalizeAnswer(input)
-  const expected = normalizeAnswer(expectedRaw)
+  const answer = normalizeAnswer(input, locale)
+  const expected = normalizeAnswer(expectedRaw, locale)
   if (!answer) return 'wrong'
   if (answer === expected) return 'exact'
-  if (stripDiacritics(answer) === stripDiacritics(expected)) return 'accent'
+  if (foldEquivalents(stripDiacritics(answer)) === foldEquivalents(stripDiacritics(expected))) return 'accent'
   return 'wrong'
 }
-
-export const ITALIAN_ACCENTS = ['à', 'è', 'é', 'ì', 'ò', 'ù'] as const
 
 export function splitCloze(sentence: string): [string, string] {
   const [before, after] = sentence.split(/\{blank\}/i)

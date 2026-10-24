@@ -39,8 +39,8 @@
 }
 
 @theme inline {
-  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Source Serif 4", ui-serif, Georgia, serif;
+  --font-sans: "Manrope", "PingFang SC", "Hiragino Sans", "Noto Sans KR", "Apple SD Gothic Neo", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Source Serif 4", "Songti SC", "Hiragino Mincho ProN", ui-serif, Georgia, serif;
   --color-bg: var(--bg);
   --color-fg: var(--fg);
   --color-muted: var(--muted);
@@ -142,6 +142,22 @@ textarea {
   animation: rise 0.4s ease both;
 }
 
+.thin-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+.thin-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.thin-scrollbar::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--line);
+  background-clip: padding-box;
+}
+
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
@@ -149,4 +165,9 @@ textarea {
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+:where(a, button, input, textarea, select, [role='switch']):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }

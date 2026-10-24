@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { useI18n } from '../../i18n/translate'
 import { clsx } from '../../lib/utils'
 import { Button } from '../ui'
 
@@ -19,7 +20,13 @@ export function SpellingInput({
   onChange: (value: string) => void
   onSubmit: () => void
 }) {
+  const { t } = useI18n()
   const inputRef = useRef<HTMLInputElement>(null)
+  const almost = t('session.almostExample')
+  const token = '{expected}'
+  const splitAt = almost.indexOf(token)
+  const almostBefore = splitAt >= 0 ? almost.slice(0, splitAt) : almost
+  const almostAfter = splitAt >= 0 ? almost.slice(splitAt + token.length) : ''
 
   useEffect(() => {
     if (disabled) return
@@ -46,7 +53,7 @@ export function SpellingInput({
         autoComplete="off"
         spellCheck={false}
         enterKeyHint="done"
-        placeholder="Введите слово…"
+        placeholder={t('session.typeWord')}
         className={clsx(
           'min-h-16 w-full rounded-2xl border bg-card px-4 text-center font-display text-3xl outline-none transition',
           status === 'idle' && 'border-line text-fg focus:border-accent',
@@ -58,12 +65,14 @@ export function SpellingInput({
 
       {status === 'accent' ? (
         <p className="text-center text-sm font-medium text-warn">
-          Почти! Проверьте ударения — например <span className="font-display">{expected}</span>
+          {almostBefore}
+          <span className="font-display">{expected}</span>
+          {almostAfter}
         </p>
       ) : null}
 
       <Button className="w-full" disabled={disabled || !value.trim()} onClick={onSubmit}>
-        Проверить
+        {t('common.check')}
       </Button>
     </div>
   )

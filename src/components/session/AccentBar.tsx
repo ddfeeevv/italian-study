@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { ITALIAN_ACCENTS } from '../../lib/session'
 
 function insertAtCursor(char: string) {
   const el = document.activeElement
@@ -21,7 +20,7 @@ function insertAtCursor(char: string) {
   })
 }
 
-export function AccentBar({ offset = 0 }: { offset?: number }) {
+export function AccentBar({ accents, offset = 0 }: { accents: readonly string[]; offset?: number }) {
   const [lift, setLift] = useState(offset)
 
   useEffect(() => {
@@ -40,15 +39,17 @@ export function AccentBar({ offset = 0 }: { offset?: number }) {
     }
   }, [offset])
 
+  if (accents.length === 0) return null
+
   return (
     <div
-      className="fixed bottom-0 left-1/2 z-30 flex w-full max-w-md -translate-x-1/2 justify-center gap-2 border-t border-line bg-card/95 px-3 pt-2 backdrop-blur lg:bottom-8 lg:w-auto lg:max-w-none lg:rounded-full lg:border lg:px-3 lg:shadow-[var(--shadow)]"
+      className="fixed inset-x-0 bottom-0 z-30 flex flex-wrap justify-center gap-2 border-t border-line bg-card/95 px-3 pt-2 backdrop-blur lg:inset-x-auto lg:bottom-8 lg:left-1/2 lg:w-auto lg:max-w-xl lg:-translate-x-1/2 lg:rounded-3xl lg:border lg:px-3 lg:shadow-[var(--shadow)]"
       style={{
         ...(lift > 0 ? { bottom: lift } : {}),
         paddingBottom: lift > 80 ? '0.5rem' : 'max(0.5rem, env(safe-area-inset-bottom))',
       }}
     >
-      {ITALIAN_ACCENTS.map((accent) => (
+      {accents.map((accent) => (
         <button
           key={accent}
           type="button"

@@ -1,12 +1,15 @@
-import { ListPlus, Pencil, PenLine, Play, Plus, Trash2 } from 'lucide-react'
+import { ListPlus, Pencil, PenLine, Play, Plus } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { SpeakButton } from '../components/SpeakButton'
-import { Button, Card, EmptyState, Field, IconButton, Input, Page, Sheet, Textarea } from '../components/ui'
+import { Button, EmptyState, Field, IconButton, Input, List, Page, Sheet, Textarea } from '../components/ui'
 import { linesToCards, parseWordText } from '../lib/import-export'
 import { createCard, dueCount, vocabCards } from '../lib/srs'
-import { italianSpeechText } from '../lib/tts'
-import { STAGE_LABELS, type Card as StudyCard } from '../types/models'
+import { speechText } from '../lib/tts'
+import { subjectSpeech } from '../lib/subjects'
+import { useI18n } from '../i18n/translate'
+import type { MessageKey } from '../i18n/messages'
+import type { Card as StudyCard } from '../types/models'
 import { useAppStore } from '../store/app-store'
 import { useAuth } from '../store/auth-store'
 import { DeckForm } from './DecksPage'
@@ -16,8 +19,9 @@ type AddMode = 'menu' | 'manual' | 'bulk' | null
 export function DeckDetailPage() {
   const { deckId } = useParams()
   const navigate = useNavigate()
+  const { t, plural } = useI18n()
   const { user } = useAuth()
-  const { decks, cardsByDeck, updateDeck, deleteDeck, addCards, updateCard, deleteCard } = useAppStore()
+  const { decks, cardsByDeck, subjects, updateDeck, deleteDeck, addCards, updateCard, deleteCard } = useAppStore()
   const deck = decks.find((item) => item.id === deckId)
   const cards = deckId ? cardsByDeck(deckId) : []
   const words = vocabCards(cards)
@@ -25,11 +29,14 @@ export function DeckDetailPage() {
   const [editingDeck, setEditingDeck] = useState(false)
   const [editingCard, setEditingCard] = useState<StudyCard | null>(null)
   const [addMode, setAddMode] = useState<AddMode>(null)
+  const subject = subjects.find((item) => item.id === deck?.subjectId)
+  const speech = subjectSpeech(subject)
+  const presetId = subject?.presetId
 
   if (!deck || !deckId) {
     return (
       <Page>
-        <EmptyState title="Колода не найдена" text="Возможно, её уже удалили." action={<Link to="/">Назад</Link>} />
+        <EmptyState title={t('deck.notFound')} text={t('deck.gone')} action={<Link to="/">{t('common.back')}</Link>} />
       </Page>
     )
   }
@@ -39,7 +46,7 @@ export function DeckDetailPage() {
   }
 
   const removeDeck = () => {
-    if (window.confirm('Удалить колоду и все её карточки?')) {
+    if (window.confirm(t('deck.confirmDelete'))) {
       deleteDeck(deck.id)
       navigate('/')
     }
@@ -50,7 +57,7 @@ export function DeckDetailPage() {
       <div className="lg:grid lg:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)] lg:items-start lg:gap-10">
         <div className="lg:sticky lg:top-8">
           <button type="button" onClick={() => navigate('/')} className="mb-3 text-sm font-medium text-muted">
-            ← Колоды
+            ← {t('nav.decks')}
           </button>
 
           <header className="mb-5 flex items-start justify-between gap-3">
@@ -58,65 +65,62 @@ export function DeckDetailPage() {
               <h1 className="font-display text-3xl leading-tight">{deck.title}</h1>
               {deck.description ? <p className="mt-2 text-sm leading-6 text-muted">{deck.description}</p> : null}
               <p className="mt-3 text-sm text-muted">
-                {words.length} слов · {dueWords} к повторению
+                {t('decks.metaDueOnly', { count: words.length, noun: plural('words', words.length), due: dueWords })}
               </p>
             </div>
-            <IconButton label="Изменить колоду" onClick={() => setEditingDeck(true)}>
+            <IconButton label={t('deck.edit')} onClick={() => setEditingDeck(true)}>
               <Pencil size={18} />
             </IconButton>
           </header>
 
           <Button className="mb-6 w-full" disabled={dueWords === 0} onClick={() => navigate(`/study/${deck.id}`)}>
             <Play size={16} />
-            Учить
+            {t('common.learn')}
           </Button>
 
           <button type="button" className="hidden text-sm text-danger lg:inline" onClick={removeDeck}>
-            Удалить колоду
+            {t('deck.delete')}
           </button>
         </div>
 
         <div>
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-muted">Слова</h2>
+            <h2 className="text-sm font-semibold">{t('deck.words')}</h2>
             <button
               type="button"
               onClick={() => setAddMode('menu')}
               className="inline-flex items-center gap-1 text-sm font-semibold text-accent"
             >
               <Plus size={16} />
-              Добавить
+              {t('common.add')}
             </button>
           </div>
 
           {words.length === 0 ? (
             <EmptyState
-              title="В колоде нет слов"
-              text="Добавьте по одному или вставьте список: слово — перевод."
-              action={<Button onClick={() => setAddMode('menu')}>Первое слово</Button>}
+              title={t('deck.emptyTitle')}
+              text={t('deck.emptyText')}
+              action={<Button onClick={() => setAddMode('menu')}>{t('deck.firstWord')}</Button>}
             />
           ) : (
-            <div className="grid gap-2 xl:grid-cols-2">
+            <List>
               {words.map((card) => (
-                <Card key={card.id} className="flex items-center gap-3 px-4 py-3">
-                  <SpeakButton text={italianSpeechText(card)} />
-                  <button type="button" onClick={() => setEditingCard(card)} className="min-w-0 flex-1 text-left">
-                    <p className="truncate font-semibold">{card.term}</p>
-                    <p className="truncate text-sm text-muted">{card.translation}</p>
+                <div key={card.id} className="flex items-center gap-2 px-3 py-2">
+                  <SpeakButton text={speechText(card)} locale={speech.locale} label={speech.label} />
+                  <button type="button" onClick={() => setEditingCard(card)} className="flex min-w-0 flex-1 items-center gap-3 py-1.5 text-left">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-semibold">{card.term}</span>
+                      <span className="block truncate text-sm text-muted">{card.translation}</span>
+                    </span>
+                    <span className="shrink-0 text-xs text-muted">{t(`stage.${card.stage}` as MessageKey)}</span>
                   </button>
-                  <span className="shrink-0 rounded-full bg-surface px-2 py-1 text-[11px] font-semibold text-muted">
-                    {STAGE_LABELS[card.stage]}
-                  </span>
-                  <IconButton label="Удалить карточку" onClick={() => deleteCard(card.id)}>
-                    <Trash2 size={16} />
-                  </IconButton>
-                </Card>
+                </div>
               ))}
-            </div>
+            </List>
           )}
 
           <button type="button" className="mt-8 text-sm text-danger lg:hidden" onClick={removeDeck}>
-            Удалить колоду
+            {t('deck.delete')}
           </button>
         </div>
       </div>
@@ -142,6 +146,7 @@ export function DeckDetailPage() {
 
       {addMode === 'manual' || editingCard ? (
         <CardForm
+          presetId={presetId}
           initial={editingCard ?? undefined}
           onCancel={() => {
             setEditingCard(null)
@@ -157,11 +162,21 @@ export function DeckDetailPage() {
             setEditingCard(null)
             setAddMode(null)
           }}
+          onDelete={
+            editingCard
+              ? () => {
+                  deleteCard(editingCard.id)
+                  setEditingCard(null)
+                  setAddMode(null)
+                }
+              : undefined
+          }
         />
       ) : null}
 
       {addMode === 'bulk' ? (
         <BulkImportSheet
+          presetId={presetId}
           onCancel={() => setAddMode(null)}
           onImport={(parsed) => {
             if (!user) return
@@ -183,9 +198,10 @@ function AddChooser({
   onBulk: () => void
   onCancel: () => void
 }) {
+  const { t } = useI18n()
   return (
     <Sheet onClose={onCancel}>
-          <p className="mb-3 text-center text-sm font-semibold text-muted">Добавить в колоду</p>
+          <p className="mb-3 text-center text-sm font-semibold text-muted">{t('deck.addTitle')}</p>
           <div className="space-y-2">
             <button
               type="button"
@@ -196,8 +212,8 @@ function AddChooser({
                 <PenLine size={18} />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block text-sm font-semibold">Вручную</span>
-                <span className="block text-xs text-muted">Одно слово и перевод</span>
+                <span className="block text-sm font-semibold">{t('deck.manual')}</span>
+                <span className="block text-xs text-muted">{t('deck.manualHint')}</span>
               </span>
             </button>
             <button
@@ -209,58 +225,62 @@ function AddChooser({
                 <ListPlus size={18} />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block text-sm font-semibold">Пакетный импорт</span>
-                <span className="block text-xs text-muted">Вставить список строк сразу</span>
+                <span className="block text-sm font-semibold">{t('deck.bulk')}</span>
+                <span className="block text-xs text-muted">{t('deck.bulkHint')}</span>
               </span>
             </button>
           </div>
           <Button className="mt-4 w-full" variant="secondary" onClick={onCancel}>
-            Отмена
+            {t('common.cancel')}
           </Button>
     </Sheet>
   )
 }
 
 function BulkImportSheet({
+  presetId,
   onCancel,
   onImport,
 }: {
+  presetId?: string | null
   onCancel: () => void
   onImport: (parsed: ReturnType<typeof parseWordText>['items']) => void
 }) {
+  const { t, wordExample, bulkExample } = useI18n()
+  const sample = wordExample(presetId)
   const [bulk, setBulk] = useState('')
   const preview = useMemo(() => parseWordText(bulk), [bulk])
 
   return (
     <Sheet>
-        <h2 className="font-display text-2xl">Пакетный импорт</h2>
+        <h2 className="font-display text-2xl">{t('deck.bulkTitle')}</h2>
         <p className="mt-2 text-sm leading-6 text-muted">
-          Каждая строка — слово и перевод: <code className="rounded bg-surface px-1.5">lavorare - работать</code>
+          {t('deck.bulkHelp')} <code className="rounded bg-surface px-1.5">{sample.term} - {sample.translation}</code>
         </p>
         <Textarea
           className="mt-4"
           value={bulk}
           onChange={(event) => setBulk(event.target.value)}
-          placeholder={'lavorare - работать\nciao, привет\ngrazie; спасибо'}
+          placeholder={bulkExample(presetId)}
         />
         {preview.items.length > 0 || preview.skipped > 0 ? (
           <p className="mt-3 text-sm text-muted">
-            Слов: {preview.items.length}
+            {t('deck.previewCount', { count: preview.items.length })}
             {preview.items.length > 0
               ? `. ${preview.items
                   .slice(0, 3)
                   .map((line) => line.term)
                   .join(', ')}${preview.items.length > 3 ? '…' : ''}`
               : ''}
-            {preview.skipped > 0 ? `. Пропущено строк: ${preview.skipped} — это не слова.` : ''}
+            {preview.skipped > 0 ? t('deck.previewSkipped', { count: preview.skipped }) : ''}
           </p>
         ) : null}
         <div className="mt-6 grid grid-cols-2 gap-3">
           <Button variant="secondary" onClick={onCancel}>
-            Отмена
+            {t('common.cancel')}
           </Button>
           <Button disabled={preview.items.length === 0} onClick={() => onImport(preview.items)}>
-            Импорт {preview.items.length || ''}
+            {t('deck.import', { count: preview.items.length || '' })}
           </Button>
         </div>
     </Sheet>
@@ -268,10 +288,13 @@ function BulkImportSheet({
 }
 
 function CardForm({
+  presetId,
   initial,
   onSave,
   onCancel,
+  onDelete,
 }: {
+  presetId?: string | null
   initial?: StudyCard
   onSave: (draft: {
     type: 'vocab'
@@ -282,7 +305,10 @@ function CardForm({
     notes?: string
   }) => void
   onCancel: () => void
+  onDelete?: () => void
 }) {
+  const { t, wordExample } = useI18n()
+  const sample = wordExample(presetId)
   const [term, setTerm] = useState(initial?.term ?? '')
   const [translation, setTranslation] = useState(initial?.translation ?? '')
   const [explanation, setExplanation] = useState(initial?.explanation ?? '')
@@ -291,24 +317,24 @@ function CardForm({
 
   return (
     <Sheet>
-        <h2 className="font-display text-2xl">{initial ? 'Слово' : 'Новое слово'}</h2>
+        <h2 className="font-display text-2xl">{initial ? t('deck.editWord') : t('deck.newWord')}</h2>
         <div className="mt-5 space-y-4">
-          <Field label="Слово">
-            <Input value={term} onChange={(event) => setTerm(event.target.value)} placeholder="lavorare" />
+          <Field label={t('deck.term')}>
+            <Input value={term} onChange={(event) => setTerm(event.target.value)} placeholder={sample.term} />
           </Field>
-          <Field label="Перевод">
-            <Input value={translation} onChange={(event) => setTranslation(event.target.value)} placeholder="работать" />
+          <Field label={t('deck.translation')}>
+            <Input value={translation} onChange={(event) => setTranslation(event.target.value)} placeholder={sample.translation} />
           </Field>
-          <Field label="Объяснение при ошибке">
-            <Textarea className="min-h-20" value={explanation} onChange={(event) => setExplanation(event.target.value)} placeholder="необязательно" />
+          <Field label={t('deck.explanation')}>
+            <Textarea className="min-h-20" value={explanation} onChange={(event) => setExplanation(event.target.value)} placeholder={t('common.optional')} />
           </Field>
-          <Field label="Заметка">
-            <Input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="необязательно" />
+          <Field label={t('deck.note')}>
+            <Input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder={t('common.optional')} />
           </Field>
         </div>
         <div className="mt-6 grid grid-cols-2 gap-3">
           <Button variant="secondary" onClick={onCancel}>
-            Отмена
+            {t('common.cancel')}
           </Button>
           <Button
             disabled={!canSave}
@@ -323,9 +349,14 @@ function CardForm({
               })
             }
           >
-            Сохранить
+            {t('common.save')}
           </Button>
         </div>
+        {onDelete ? (
+          <button type="button" onClick={onDelete} className="mt-4 w-full py-2 text-sm font-medium text-danger">
+            {t('deck.deleteCard')}
+          </button>
+        ) : null}
     </Sheet>
   )
 }

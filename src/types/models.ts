@@ -4,6 +4,27 @@ export type CardType = 'vocab' | 'cloze' | 'transform'
 
 export type DeckKind = 'words' | 'exercise'
 
+export type SubjectKind = 'language' | 'topic'
+
+/** Script of the answer or of the prompt. `any` is a subject without a language. */
+export type Script = 'latin' | 'cyrillic' | 'cjk' | 'hangul' | 'arabic' | 'greek' | 'devanagari' | 'any'
+
+export type Subject = {
+  id: string
+  userId: string
+  title: string
+  kind: SubjectKind
+  /** BCP-47 voice. Empty for a topic. */
+  locale: string | null
+  accents: string[]
+  answerScript: Script
+  promptScript: Script
+  /** Russian phrase after «Произнести», e.g. «по-итальянски». */
+  speechLabel: string
+  presetId: string | null
+  createdAt: string
+}
+
 export type Deck = {
   id: string
   userId: string
@@ -11,6 +32,7 @@ export type Deck = {
   description: string
   color?: string
   kind?: DeckKind
+  subjectId?: string
   createdAt: string
 }
 
@@ -36,10 +58,12 @@ export type ThemePreference = 'light' | 'dark' | 'system'
 export type Settings = {
   theme: ThemePreference
   autoPlayAudio: boolean
+  activeSubjectId?: string
 }
 
 export type AppData = {
-  version: 2
+  version: 3
+  subjects: Subject[]
   decks: Deck[]
   cards: Card[]
   settings: Settings

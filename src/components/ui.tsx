@@ -1,11 +1,12 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react'
+import { createPortal } from 'react-dom'
 import { clsx } from '../lib/utils'
 
 export function Screen({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <div
       className={clsx(
-        'mx-auto flex min-h-dvh w-full max-w-md flex-col bg-bg md:border-x md:border-line lg:max-w-none lg:border-x-0',
+        'flex min-h-dvh w-full flex-col bg-bg',
         className,
       )}
     >
@@ -18,7 +19,7 @@ export function Page({ children, className }: { children: ReactNode; className?:
   return (
     <main
       className={clsx(
-        'mx-auto w-full max-w-6xl flex-1 px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-4 lg:px-10 lg:pb-12 lg:pt-6',
+        'mx-auto w-full max-w-6xl flex-1 px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-4 md:px-6 lg:px-10 lg:pb-12 lg:pt-6',
         className,
       )}
     >
@@ -36,9 +37,9 @@ export function Sheet({
   onClose?: () => void
   className?: string
 }) {
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 sm:items-center sm:p-6"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-6"
       onClick={onClose}
     >
       <div
@@ -55,6 +56,15 @@ export function Sheet({
           {children}
         </Card>
       </div>
+    </div>,
+    document.body,
+  )
+}
+
+export function List({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <div className={clsx('divide-y divide-line overflow-hidden rounded-2xl border border-line bg-card', className)}>
+      {children}
     </div>
   )
 }

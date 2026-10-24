@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { t } from '../i18n/translate'
 import { supabase } from '../lib/supabase'
 
 type AuthStore = {
@@ -65,10 +66,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       changeEmail: async (currentPassword, nextEmail) => {
         const email = session?.user.email
         const userId = session?.user.id
-        if (!email || !userId) return 'Сессия не найдена. Войдите снова.'
+        if (!email || !userId) return t('auth.sessionMissing')
         const normalized = nextEmail.trim().toLowerCase()
-        if (!isEmail(normalized)) return 'Укажите корректную почту'
-        if (normalized === email.toLowerCase()) return 'Это уже текущая почта'
+        if (!isEmail(normalized)) return t('auth.badEmail')
+        if (normalized === email.toLowerCase()) return t('auth.sameEmail')
         const proof = await proveCurrentPassword(userId, email, currentPassword)
         if (proof) return proof
         const { error } = await supabase.auth.updateUser(
@@ -80,11 +81,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       changePassword: async (currentPassword, nextPassword) => {
         const email = session?.user.email
         const userId = session?.user.id
-        if (!email || !userId) return 'Сессия не найдена. Войдите снова.'
+        if (!email || !userId) return t('auth.sessionMissing')
         const issue = passwordIssue(nextPassword)
         if (issue) return issue
-        if (nextPassword === currentPassword) return 'Новый пароль должен отличаться от текущего'
-        if (nextPassword.toLowerCase() === email.toLowerCase()) return 'Пароль не должен совпадать с почтой'
+        if (nextPassword === currentPassword) return t('auth.passwordDifferent')
+        if (nextPassword.toLowerCase() === email.toLowerCase()) return t('auth.passwordMatchesEmail')
         const proof = await proveCurrentPassword(userId, email, currentPassword)
         if (proof) return proof
         const { error } = await supabase.auth.updateUser({
@@ -94,7 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (error) return authErrorMessage(error)
         const { error: othersError } = await supabase.auth.signOut({ scope: 'others' })
         if (othersError) {
-          return 'Пароль обновлён, но другие сессии не удалось завершить. Выйдите на остальных устройствах вручную.'
+          return t('auth.signOutOthersFailed')
         }
         return null
       },
@@ -117,9 +118,9 @@ const MAX_PASSWORD_BYTES = 72
 
 function passwordIssue(password: string): string | null {
   if (password.trim().length < MIN_PASSWORD_LENGTH) {
-    return `Пароль должен быть не короче ${MIN_PASSWORD_LENGTH} символов`
+    return t('auth.passwordShort', { min: MIN_PASSWORD_LENGTH })
   }
-  if (new TextEncoder().encode(password).length > MAX_PASSWORD_BYTES) return 'Пароль слишком длинный'
+  if (new TextEncoder().encode(password).length > MAX_PASSWORD_BYTES) return t('auth.passwordLong')
   return null
 }
 
@@ -136,7 +137,7 @@ async function proveCurrentPassword(
   if (error) return authErrorMessage(error)
   if (data.user?.id !== userId) {
     await supabase.auth.signOut({ scope: 'local' })
-    return 'Не удалось подтвердить аккаунт'
+    return t('auth.accountUnconfirmed')
   }
   return null
 }
@@ -146,28 +147,28 @@ function authErrorMessage(error: { message: string; code?: string }): string {
     case 'invalid_credentials':
     case 'current_password_mismatch':
     case 'reauthentication_not_valid':
-      return 'Неверный текущий пароль'
+      return t('auth.wrongPassword')
     case 'current_password_required':
     case 'reauthentication_needed':
     case 'reauth_nonce_missing':
-      return 'Нужно заново подтвердить текущий пароль'
+      return t('auth.reauth')
     case 'same_password':
-      return 'Новый пароль должен отличаться от текущего'
+      return t('auth.passwordDifferent')
     case 'weak_password':
-      return 'Этот пароль слишком простой или уже встречался в утечках. Выберите другой.'
+      return t('auth.weakPassword')
     case 'email_exists':
     case 'user_already_exists':
-      return 'Эта почта уже занята'
+      return t('auth.emailTaken')
     case 'email_address_invalid':
-      return 'Укажите корректную почту'
+      return t('auth.badEmail')
     case 'over_request_rate_limit':
     case 'over_email_send_rate_limit':
-      return 'Слишком много попыток. Подождите немного и попробуйте снова.'
+      return t('auth.rateLimit')
     default:
       if (/invalid login credentials|current password/i.test(error.message)) {
-        return 'Неверный текущий пароль'
+        return t('auth.wrongPassword')
       }
-      return 'Не удалось обновить данные. Попробуйте ещё раз.'
+      return t('auth.updateFailed')
   }
 }
 

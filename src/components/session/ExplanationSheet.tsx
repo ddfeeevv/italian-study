@@ -1,5 +1,6 @@
 import { Lightbulb } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { useI18n } from '../../i18n/translate'
 import { SpeakButton } from '../SpeakButton'
 import { Button, Card } from '../ui'
 
@@ -13,6 +14,7 @@ export function ExplanationSheet({
   onContinue: () => void
 }) {
   // Prevent the Enter/keyup that submitted the answer from also clicking "Дальше"
+  const { t } = useI18n()
   const [ready, setReady] = useState(false)
   useEffect(() => {
     const id = window.setTimeout(() => setReady(true), 550)
@@ -31,9 +33,9 @@ export function ExplanationSheet({
       }}
     >
       <Card className="animate-rise w-full max-w-lg rounded-b-none px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-5 sm:rounded-3xl sm:pb-6">
-        <p className="text-sm font-semibold uppercase tracking-[0.14em] text-danger">Ошибка</p>
+        <p className="text-sm font-semibold uppercase tracking-[0.14em] text-danger">{t('common.error')}</p>
         <p className="mt-3 flex items-center gap-2 text-sm text-muted">
-          Правильно: <span className="font-display text-xl text-fg">{answer}</span>
+          {t('session.correct')} <span className="font-display text-xl text-fg">{answer}</span>
           <SpeakButton text={answer} />
         </p>
         {explanation ? (
@@ -43,7 +45,7 @@ export function ExplanationSheet({
           </p>
         ) : null}
         <Button className="mt-5 w-full" disabled={!ready} onClick={onContinue}>
-          Дальше
+          {t('common.next')}
         </Button>
       </Card>
     </div>

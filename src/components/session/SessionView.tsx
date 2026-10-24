@@ -1,4 +1,4 @@
-import { BookOpen, Check, ChevronLeft, ChevronRight, Lightbulb, PencilLine, X } from 'lucide-react'
+import { BookOpen, Check, ChevronLeft, ChevronRight, Lightbulb, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { isTextInputFocused } from '../../lib/keyboard'
@@ -20,7 +20,9 @@ import {
   type SessionRuntime,
 } from '../../lib/session'
 import { advanceCard, failCard } from '../../lib/srs'
-import { italianSpeechText, speakItalian } from '../../lib/tts'
+import { useI18n, t } from '../../i18n/translate'
+import { speechText, speak } from '../../lib/tts'
+import { productionProfile, subjectSpeech } from '../../lib/subjects'
 import { clsx } from '../../lib/utils'
 import { useAppStore } from '../../store/app-store'
 import type { Card } from '../../types/models'
@@ -35,16 +37,14 @@ import { SpellingInput } from './SpellingInput'
 type McStatus = 'idle' | 'correct' | 'wrong'
 type SpellStatus = 'idle' | 'correct' | 'wrong' | 'accent'
 
-const PHASE_LABEL: Record<SessionPhase, string> = {
-  preview: 'Фаза 1 · Знакомство',
-  mc: 'Фаза 2 · Выбор',
-  spell: 'Фаза 3 · Написание',
-}
-
 function phaseLabel(phase: SessionPhase, hasPreview: boolean): string {
-  if (hasPreview) return PHASE_LABEL[phase]
-  if (phase === 'spell') return 'Фаза 2 · Написание'
-  return 'Фаза 1 · Выбор'
+  if (hasPreview) {
+    if (phase === 'preview') return t('session.phasePreview')
+    if (phase === 'mc') return t('session.phaseChoice')
+    return t('session.phaseSpell')
+  }
+  if (phase === 'spell') return t('session.phaseSpell2')
+  return t('session.phaseChoice2')
 }
 
 export function SessionView({
@@ -64,12 +64,13 @@ export function SessionView({
   limit?: number
   exitTo?: string
 }) {
+  const { plural, countInline } = useI18n()
   const navigate = useNavigate()
   const leave = () => {
     if (exitTo) navigate(exitTo)
     else navigate(-1)
   }
-  const { cards: allCards, decks, settings, updateCard } = useAppStore()
+  const { cards: allCards, decks, subjects, activeSubject, settings, updateCard } = useAppStore()
   const [runtime, setRuntime] = useState(() =>
     createSession(cards, exam ? { limit, skipPreview: true } : { takeAll: kind === 'exercise' }),
   )
@@ -93,6 +94,10 @@ export function SessionView({
   const cardMap = useMemo(() => new Map(allCards.map((card) => [card.id, card])), [allCards])
   const current = runtime.current
   const currentCard = current ? cardMap.get(current.cardId) : undefined
+  const cardDeck = currentCard ? decks.find((deck) => deck.id === currentCard.deckId) : undefined
+  const cardSubject = subjects.find((subject) => subject.id === cardDeck?.subjectId) ?? activeSubject
+  const speech = subjectSpeech(cardSubject)
+  const profile = useMemo(() => productionProfile(cardSubject), [cardSubject])
   const pool = currentCard
     ? allCards.filter((card) => card.deckId === currentCard.deckId)
     : allCards
@@ -115,7 +120,7 @@ export function SessionView({
 
   useEffect(() => {
     if (!current || !currentCard) return
-    setChoices(buildChoices(currentCard, pool, subjectPool))
+    setChoices(buildChoices(currentCard, pool, subjectPool, profile))
     setSelected(null)
     setMcStatus('idle')
     setSpellValue('')
@@ -123,29 +128,30 @@ export function SessionView({
     setShowHint(false)
     setLocked(false)
     setExplain(null)
-  }, [current?.cardId, current?.tier, currentCard?.id, runtime.phase])
+  }, [current?.cardId, current?.tier, currentCard?.id, profile, runtime.phase])
 
   const answerRevealed = Boolean(locked || explain)
   const isPreview = current?.tier === 0
 
   useEffect(() => {
-    if (!current || !currentCard || !settings.autoPlayAudio) return
+    if (!current || !currentCard || !settings.autoPlayAudio || !speech.locale) return
     if (isPreview) {
-      speakItalian(italianSpeechText(currentCard, { revealed: true }))
+      speak(speechText(currentCard, { revealed: true }), speech.locale)
       return
     }
     if (answerRevealed) {
-      speakItalian(italianSpeechText(currentCard, { tier: current.tier === 0 ? 1 : current.tier, revealed: true }))
+      speak(speechText(currentCard, { tier: current.tier === 0 ? 1 : current.tier, revealed: true }), speech.locale)
       return
     }
     if (currentCard.type === 'vocab') return
-    speakItalian(
-      italianSpeechText(currentCard, {
+    speak(
+      speechText(currentCard, {
         tier: current.tier === 0 ? 1 : current.tier,
         revealed: false,
       }),
+      speech.locale,
     )
-  }, [current?.cardId, current?.tier, currentCard?.id, settings.autoPlayAudio, answerRevealed, isPreview])
+  }, [current?.cardId, current?.tier, currentCard?.id, settings.autoPlayAudio, answerRevealed, isPreview, speech.locale])
 
   useEffect(() => () => clearAdvanceTimer(), [])
 
@@ -235,7 +241,7 @@ export function SessionView({
 
   const onSpellSubmit = () => {
     if (!current || !currentCard || locked || current.tier !== 2) return
-    const result = checkSpelling(spellValue, cardAnswer(currentCard))
+    const result = checkSpelling(spellValue, cardAnswer(currentCard), speech.locale)
     if (result === 'accent') {
       setSpellStatus('accent')
       return
@@ -326,13 +332,13 @@ export function SessionView({
 
       if (event.key === ' ' || event.code === 'Space') {
         if (!current || !currentCard) return
-        const phrase = italianSpeechText(currentCard, {
+        const phrase = speechText(currentCard, {
           tier: current.tier === 0 ? 2 : current.tier,
           revealed: Boolean(isPreview || locked || explain),
         })
-        if (!phrase) return
+        if (!phrase || !speech.locale) return
         event.preventDefault()
-        speakItalian(phrase)
+        speak(phrase, speech.locale)
         return
       }
 
@@ -348,7 +354,7 @@ export function SessionView({
     return () => window.removeEventListener('keydown', onKey)
   })
 
-  const unit = exam ? 'вопросов' : kind === 'exercise' ? 'заданий' : 'карточек'
+  const unit = plural(exam ? 'questions' : kind === 'exercise' ? 'tasks' : 'cards', runtime.total)
 
   if (runtime.status === 'empty') {
     return (
@@ -356,17 +362,17 @@ export function SessionView({
         <SessionChrome title={title} progress="0 / 0" unit={unit} onExit={leave} />
         <div className="mx-auto flex w-full max-w-lg flex-1 items-center px-4 pb-[env(safe-area-inset-bottom)] lg:px-8">
           <EmptyState
-            title={exam ? 'Нечего спрашивать' : 'Нечего повторять'}
+            title={exam ? t('session.nothingAsk') : t('session.nothingReview')}
             text={
               exam
-                ? 'В выбранных колодах и упражнениях нет вопросов.'
+                ? t('session.noQuestions')
                 : kind === 'exercise'
-                  ? 'В этом упражнении пока нет заданий.'
-                  : 'На сегодня слов нет. Новые появятся сразу после добавления.'
+                  ? t('session.noTasks')
+                  : t('session.noWordsToday')
             }
             action={
               <Button onClick={() => navigate(exam ? '/exam' : kind === 'exercise' ? '/exercises' : '/')}>
-                {exam ? 'К выбору' : kind === 'exercise' ? 'К упражнениям' : 'К колодам'}
+                {exam ? t('session.toSetup') : kind === 'exercise' ? t('session.toExercises') : t('session.toDecks')}
               </Button>
             }
           />
@@ -393,25 +399,27 @@ export function SessionView({
             <div className="mx-auto mb-5 flex size-16 items-center justify-center rounded-full bg-success-soft text-success">
               <Check size={30} />
             </div>
-            <h1 className="font-display text-3xl">Сессия завершена</h1>
+            <h1 className="font-display text-3xl">{t('session.complete')}</h1>
             <p className="mt-3 text-sm leading-6 text-muted">
               {kind === 'exercise' ? (
                 <>
-                  Пройдено {runtime.total} {pluralCards(runtime.total, kind)}. Расписание не меняется — упражнение
-                  можно открыть снова в любой момент.
-                  {runtime.failedIds.length > 0 ? ` Ошибок по ходу: ${runtime.failedIds.length}.` : ''}
+                  {t('session.drillDone', { items: countInline('tasks', runtime.total) })}
+                  {runtime.failedIds.length > 0 ? ` ${t('session.drillErrors', { count: runtime.failedIds.length })}` : ''}
                 </>
               ) : (
                 <>
-                  Батч из {runtime.total} {pluralCards(runtime.total, kind)}. За раз берём {BATCH_SIZE_MAX} карточек максимум.
+                  {t('session.batch', {
+                    items: countInline('cards', runtime.total),
+                    maxItems: countInline('cards', BATCH_SIZE_MAX),
+                  })}{' '}
                   {runtime.failedIds.length > 0
-                    ? ` Ошибок: ${runtime.failedIds.length} — без повышения стадии, вернутся завтра.`
-                    : ' Все прошли выбор и написание.'}
+                    ? t('session.batchErrors', { count: runtime.failedIds.length })
+                    : t('session.batchClean')}
                 </>
               )}
             </p>
             <Button className="mt-8 w-full" onClick={leave}>
-              Готово
+              {t('common.done')}
             </Button>
           </div>
         </div>
@@ -433,12 +441,14 @@ export function SessionView({
           title={title}
           progress={`${done} / ${runtime.total}`}
           ratio={runtime.total ? done / runtime.total : 0}
-          phase={PHASE_LABEL.preview}
-          unit="карточек"
+          phase={t('session.phasePreview')}
+          unit={plural('cards', runtime.total)}
           onExit={leave}
         />
         <PreviewCard
           card={currentCard}
+          locale={speech.locale}
+          speechLabel={speech.label}
           canGoBack={canPreviewBack}
           onBack={onPreviewBack}
           onContinue={onPreviewContinue}
@@ -456,21 +466,15 @@ export function SessionView({
         title={title}
         progress={examBar ? examBar.label : `${done} / ${runtime.total}`}
         ratio={examBar ? examBar.ratio : runtime.total ? done / runtime.total : 0}
-        phase={exam ? (runtime.phase === 'spell' ? 'Экзамен · Написание' : 'Экзамен · Выбор') : phaseLabel(runtime.phase, runtime.hasPreview)}
+        phase={exam ? (runtime.phase === 'spell' ? t('session.examSpell') : t('session.examChoice')) : phaseLabel(runtime.phase, runtime.hasPreview)}
         unit={unit}
         onExit={leave}
       />
 
-      <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-2 lg:px-8 lg:pb-28">
-        <div className="mb-6 flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted">
-          <span className="inline-flex items-center gap-1.5">
-            {current.tier === 1 ? <Check size={14} /> : <PencilLine size={14} />}
-            {current.tier === 1 ? 'Выбор' : 'Написание'}
-          </span>
-          <span className="hidden font-medium normal-case tracking-normal lg:inline">
-            {current.tier === 1 ? 'Клавиши 1–4' : 'Enter — проверить'} · пробел — звук
-          </span>
-        </div>
+      <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-4 lg:px-8 lg:pb-28">
+        <p className="mb-4 hidden text-right text-xs text-muted lg:block">
+          {current.tier === 1 ? t('session.keysHint') : t('session.enterHint')} · {t('session.spaceHint')}
+        </p>
 
         <div
           className={clsx(
@@ -488,6 +492,8 @@ export function SessionView({
               status={spellStatus}
               locked={locked}
               revealed={answerRevealed}
+              locale={speech.locale}
+              speechLabel={speech.label}
               onChange={setSpellValue}
               onSubmit={onSpellSubmit}
             />
@@ -499,7 +505,7 @@ export function SessionView({
                 className="mt-3 inline-flex items-center gap-1.5 self-start text-sm font-medium text-accent"
               >
                 <Lightbulb size={16} />
-                {showHint ? currentCard.notes : 'Подсказка'}
+                {showHint ? currentCard.notes : t('common.hint')}
               </button>
             ) : null}
           </div>
@@ -516,7 +522,7 @@ export function SessionView({
               />
             ) : currentCard.type === 'cloze' ? (
               <Button className="w-full lg:max-w-sm" disabled={locked || !spellValue.trim()} onClick={onSpellSubmit}>
-                Проверить
+                {t('common.check')}
               </Button>
             ) : (
               <SpellingInput
@@ -535,7 +541,7 @@ export function SessionView({
         </div>
       </div>
 
-      {current.tier === 2 ? <AccentBar /> : null}
+      {current.tier === 2 ? <AccentBar accents={cardSubject?.accents ?? []} /> : null}
       {explain ? (
         <ExplanationSheet
           answer={explain.answer}
@@ -549,34 +555,39 @@ export function SessionView({
 
 function PreviewCard({
   card,
+  locale,
+  speechLabel,
   canGoBack,
   onBack,
   onContinue,
 }: {
   card: Card
+  locale: string | null
+  speechLabel: string
   canGoBack: boolean
   onBack: () => void
   onContinue: () => void
 }) {
-  const italian = (card.term || card.target || '').trim()
-  const russian = (card.translation || '').trim()
+  const { t } = useI18n()
+  const term = (card.term || card.target || '').trim()
+  const gloss = (card.translation || '').trim()
   const hint = card.notes?.trim() || undefined
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-4 lg:justify-center lg:px-8 lg:pb-16">
       <p className="mb-6 inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-muted">
         <BookOpen size={14} />
-        Слово
+        {t('session.previewLabel')}
       </p>
 
       <div className="flex flex-1 flex-col justify-center">
         <div key={card.id} className="animate-rise text-center">
           <div className="flex items-center justify-center gap-3">
-            <h1 className="font-display text-[2.75rem] leading-tight text-fg lg:text-7xl">{italian}</h1>
-            <SpeakButton text={italian} className="size-11 rounded-2xl bg-surface" />
+            <h1 className="font-display text-[2.75rem] leading-tight text-fg lg:text-7xl">{term}</h1>
+            <SpeakButton text={term} locale={locale} label={speechLabel} className="size-11 rounded-2xl bg-surface" />
           </div>
-          {russian ? (
-            <p className="mt-5 font-display text-2xl leading-snug text-accent lg:text-4xl">{russian}</p>
+          {gloss ? (
+            <p className="mt-5 font-display text-2xl leading-snug text-accent lg:text-4xl">{gloss}</p>
           ) : null}
           {hint ? (
             <p className="mx-auto mt-6 max-w-sm flex gap-2 text-left text-sm leading-6 text-muted">
@@ -590,19 +601,20 @@ function PreviewCard({
       <div className="mt-8 flex items-center gap-3 lg:mx-auto lg:mt-12 lg:w-full lg:max-w-md">
         <Button variant="secondary" className="shrink-0 px-3.5" disabled={!canGoBack} onClick={onBack}>
           <ChevronLeft size={18} />
-          Назад
+          {t('common.back')}
         </Button>
         <Button className="min-w-0 flex-1" onClick={onContinue}>
-          Запомнил, дальше
+          {t('session.remembered')}
           <ChevronRight size={18} />
         </Button>
       </div>
-      <p className="mt-3 text-center text-xs text-muted">← → · Enter — дальше · пробел — звук</p>
+      <p className="mt-3 text-center text-xs text-muted">{t('session.previewKeys')}</p>
     </div>
   )
 }
 
 function PreviewEndGate({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
+  const { t } = useI18n()
   return (
     <div
       className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 sm:items-center sm:p-6"
@@ -617,20 +629,18 @@ function PreviewEndGate({ onConfirm, onCancel }: { onConfirm: () => void; onCanc
       >
         <Panel className="animate-rise rounded-b-none px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-5 sm:rounded-3xl sm:pb-6">
           <h2 id="preview-end-title" className="font-display text-2xl">
-            Вы закончили ознакомление?
+            {t('session.previewEndTitle')}
           </h2>
-          <p className="mt-2 text-sm leading-6 text-muted">
-            Дальше начнётся практика. Можно ещё раз пролистать слова.
-          </p>
+          <p className="mt-2 text-sm leading-6 text-muted">{t('session.previewEndText')}</p>
           <div className="mt-5 flex gap-3">
             <Button variant="secondary" className="flex-1" onClick={onCancel}>
-              Нет
+              {t('common.no')}
             </Button>
             <Button className="flex-1" onClick={onConfirm}>
-              Да
+              {t('common.yes')}
             </Button>
           </div>
-          <p className="mt-3 text-center text-xs text-muted">Enter — да · Esc — нет</p>
+          <p className="mt-3 text-center text-xs text-muted">{t('session.enterYes')}</p>
         </Panel>
       </div>
     </div>
@@ -646,9 +656,9 @@ function clozePromptLabel(card: Card): string {
     answer &&
     infinitive.toLowerCase() !== answer.toLowerCase()
   ) {
-    return `Заполните пропуск · ${infinitive}`
+    return t('session.fillWith', { base: infinitive })
   }
-  return 'Заполните пропуск'
+  return t('session.fill')
 }
 
 function CardPrompt({
@@ -658,6 +668,8 @@ function CardPrompt({
   status,
   locked,
   revealed,
+  locale,
+  speechLabel,
   onChange,
   onSubmit,
 }: {
@@ -667,10 +679,13 @@ function CardPrompt({
   status: SpellStatus
   locked: boolean
   revealed: boolean
+  locale: string | null
+  speechLabel: string
   onChange: (value: string) => void
   onSubmit: () => void
 }) {
-  const speech = italianSpeechText(card, { tier, revealed })
+  const { t } = useI18n()
+  const phrase = speechText(card, { tier, revealed })
 
   if (card.type === 'cloze' && card.sentence) {
     const [before, after] = splitCloze(card.sentence)
@@ -709,10 +724,10 @@ function CardPrompt({
             )}
             {after}
           </h1>
-          {speech ? <SpeakButton text={speech} /> : null}
+          {phrase ? <SpeakButton text={phrase} locale={locale} label={speechLabel} /> : null}
         </div>
         {status === 'accent' ? (
-          <p className="mt-2 text-sm text-warn">Почти! Проверьте ударения.</p>
+          <p className="mt-2 text-sm text-warn">{t('session.almost')}</p>
         ) : null}
       </div>
     )
@@ -721,10 +736,10 @@ function CardPrompt({
   if (card.type === 'transform') {
     return (
       <div>
-        <p className="text-sm text-muted">Преобразуйте</p>
+        <p className="text-sm text-muted">{t('session.transform')}</p>
         <div className="mt-1 flex items-start gap-2">
           <h1 className="min-w-0 flex-1 font-display text-[2rem] leading-tight lg:text-5xl">{card.term}</h1>
-          {speech ? <SpeakButton text={speech} /> : null}
+          {phrase ? <SpeakButton text={phrase} locale={locale} label={speechLabel} /> : null}
         </div>
       </div>
     )
@@ -732,10 +747,10 @@ function CardPrompt({
 
   return (
     <div>
-      <p className="text-sm text-muted">Как сказать</p>
+      <p className="text-sm text-muted">{t('session.howToSay')}</p>
       <div className="mt-1 flex items-start gap-2">
         <h1 className="min-w-0 flex-1 font-display text-[2.1rem] leading-tight lg:text-5xl">{card.translation}</h1>
-        {speech ? <SpeakButton text={speech} /> : null}
+        {phrase ? <SpeakButton text={phrase} locale={locale} label={speechLabel} /> : null}
       </div>
     </div>
   )
@@ -746,21 +761,22 @@ function SessionChrome({
   progress,
   ratio = 0,
   phase,
-  unit = 'карточек',
+  unit,
   onExit,
 }: {
   title: string
   progress: string
   ratio?: number
   phase?: string
-  unit?: string
+  unit: string
   onExit: () => void
 }) {
+  const { t } = useI18n()
   return (
     <header className="sticky top-0 z-10 bg-bg/90 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur lg:px-8">
       <div className="mx-auto w-full max-w-5xl">
       <div className="flex items-center gap-2">
-        <IconButton label="Выйти" onClick={onExit}>
+        <IconButton label={t('common.exit')} onClick={onExit}>
           <X size={22} />
         </IconButton>
         <div className="min-w-0 flex-1">
@@ -781,18 +797,6 @@ function SessionChrome({
       </div>
     </header>
   )
-}
-
-function pluralCards(count: number, kind: 'vocab' | 'exercise'): string {
-  const mod10 = count % 10
-  const mod100 = count % 100
-  const forms =
-    kind === 'exercise'
-      ? (['задание', 'задания', 'заданий'] as const)
-      : (['карточка', 'карточки', 'карточек'] as const)
-  if (mod10 === 1 && mod100 !== 11) return forms[0]
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return forms[1]
-  return forms[2]
 }
 
 function examBarState(runtime: SessionRuntime): { label: string; ratio: number } {
@@ -822,10 +826,11 @@ function ExamComplete({
   const wrong = runtime.failedIds.length
   const clean = Math.max(0, runtime.total - wrong)
   const perfect = wrong === 0
+  const { plural } = useI18n()
 
   return (
     <Screen>
-      <SessionChrome title="Экзамен" progress={`${runtime.total} / ${runtime.total}`} ratio={1} unit="вопросов" onExit={onDone} />
+      <SessionChrome title={t('exam.title')} progress={`${runtime.total} / ${runtime.total}`} ratio={1} unit={plural('questions', runtime.total)} onExit={onDone} />
       <div
         className={clsx(
           'mx-auto flex w-full max-w-lg flex-1 flex-col overflow-y-auto px-5 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] lg:max-w-xl lg:px-8',
@@ -845,18 +850,16 @@ function ExamComplete({
             {clean}
             <span className="text-3xl text-muted">/{runtime.total}</span>
           </p>
-          <h1 className="mt-3 font-display text-2xl">без ошибок</h1>
-          <p className="mt-3 text-sm leading-6 text-muted">
-            Вопрос засчитан, только если на каждом шаге ответ верный с первого раза. Расписание не меняется.
-          </p>
+          <h1 className="mt-3 font-display text-2xl">{t('session.perfect')}</h1>
+          <p className="mt-3 text-sm leading-6 text-muted">{t('session.examRule')}</p>
           <Button className="mt-6 w-full" onClick={onDone}>
-            К выбору
+            {t('session.toSetup')}
           </Button>
         </div>
 
         {missed.length > 0 ? (
           <div className="mt-6">
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-[0.14em] text-muted">Где ошибся</h2>
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-[0.14em] text-muted">{t('session.misses')}</h2>
             <ul className="space-y-2">
               {missed.map((card) => {
                 const row = examMissRow(card)

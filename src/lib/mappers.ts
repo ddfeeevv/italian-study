@@ -1,5 +1,5 @@
-import type { Card, Deck, DeckKind } from '../types/models'
-import type { CardRow, DeckRow } from './supabase'
+import type { Card, Deck, DeckKind, Subject } from '../types/models'
+import type { CardRow, DeckRow, SubjectRow } from './supabase'
 
 /** Stored in `description` so exercise sets sync without a schema change. */
 const EXERCISE_MARK = '[[exercise]]\n'
@@ -15,6 +15,38 @@ export function normalizeDeck(deck: Deck): Deck {
   }
 }
 
+export function mapSubject(row: SubjectRow): Subject {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    title: row.title,
+    kind: row.kind === 'topic' ? 'topic' : 'language',
+    locale: row.locale ?? null,
+    accents: row.accents ?? [],
+    answerScript: row.answer_script ?? 'any',
+    promptScript: row.prompt_script ?? 'any',
+    speechLabel: row.speech_label ?? '',
+    presetId: row.preset_id ?? null,
+    createdAt: row.created_at,
+  }
+}
+
+export function toSubjectRow(subject: Subject): SubjectRow {
+  return {
+    id: subject.id,
+    user_id: subject.userId,
+    title: subject.title,
+    kind: subject.kind,
+    locale: subject.locale,
+    accents: subject.accents,
+    answer_script: subject.answerScript,
+    prompt_script: subject.promptScript,
+    speech_label: subject.speechLabel,
+    preset_id: subject.presetId,
+    created_at: subject.createdAt,
+  }
+}
+
 export function mapDeck(row: DeckRow): Deck {
   return normalizeDeck({
     id: row.id,
@@ -22,15 +54,16 @@ export function mapDeck(row: DeckRow): Deck {
     title: row.title,
     description: row.description ?? '',
     color: row.color ?? undefined,
+    subjectId: row.subject_id ?? undefined,
     createdAt: row.created_at,
   })
 }
 
-export function toDeckRow(deck: Deck): DeckRow {
+export function toDeckRow(deck: Deck, includeSubject = true): DeckRow {
   const clean = deck.description.startsWith(EXERCISE_MARK)
     ? deck.description.slice(EXERCISE_MARK.length)
     : deck.description
-  return {
+  const row: DeckRow = {
     id: deck.id,
     user_id: deck.userId,
     title: deck.title,
@@ -38,6 +71,8 @@ export function toDeckRow(deck: Deck): DeckRow {
     color: deck.color ?? null,
     created_at: deck.createdAt,
   }
+  if (includeSubject) row.subject_id = deck.subjectId ?? null
+  return row
 }
 
 export function mapCard(row: CardRow): Card {
