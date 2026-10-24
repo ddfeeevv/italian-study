@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { AccountPage } from './pages/AccountPage'
 import { AuthPage } from './pages/AuthPage'
@@ -34,11 +35,11 @@ export default function App() {
                 <Route path="/account" element={<AccountPage />} />
                 <Route path="/settings" element={<Navigate to="/account" replace />} />
               </Route>
-              <Route path="/study" element={<SessionPage kind="vocab" />} />
-              <Route path="/study/:deckId" element={<SessionPage kind="vocab" />} />
+              <Route path="/study" element={<ErrorBoundary><SessionPage kind="vocab" /></ErrorBoundary>} />
+              <Route path="/study/:deckId" element={<ErrorBoundary><SessionPage kind="vocab" /></ErrorBoundary>} />
               <Route path="/drill" element={<Navigate to="/exercises" replace />} />
-              <Route path="/drill/:deckId" element={<SessionPage kind="exercise" />} />
-              <Route path="/exam/run" element={<ExamSessionPage />} />
+              <Route path="/drill/:deckId" element={<ErrorBoundary><SessionPage kind="exercise" /></ErrorBoundary>} />
+              <Route path="/exam/run" element={<ErrorBoundary><ExamSessionPage /></ErrorBoundary>} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

@@ -2,7 +2,7 @@ import { ListPlus, Pencil, PenLine, Play, Plus } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Button, EmptyState, Field, IconButton, Input, List, Page, Sheet, Textarea } from '../components/ui'
-import { linesToCards, parseExerciseText } from '../lib/import-export'
+import { linesToCards, parseExerciseText, sanitizeUserInput } from '../lib/import-export'
 import { createCard, exerciseCards } from '../lib/srs'
 import { useAppStore } from '../store/app-store'
 import { useAuth } from '../store/auth-store'
@@ -166,10 +166,24 @@ export function ExerciseDetailPage() {
           }}
           onSave={(draft) => {
             if (!user) return
+            const clean = {
+              ...draft,
+              term: sanitizeUserInput(draft.term),
+              sentence: draft.sentence ? sanitizeUserInput(draft.sentence) : undefined,
+              target: sanitizeUserInput(draft.target || draft.term),
+              explanation: draft.explanation ? sanitizeUserInput(draft.explanation) : undefined,
+              options: draft.options?.map(sanitizeUserInput),
+            }
             if (editingCard) {
-              updateCard({ ...editingCard, ...draft, target: draft.target })
+              updateCard({
+                ...editingCard,
+                ...clean,
+                sentence: clean.sentence ?? editingCard.sentence,
+                options: clean.options ?? editingCard.options,
+                target: clean.target,
+              })
             } else {
-              addCards([createCard({ ...draft, deckId: deck.id, userId: user.id })])
+              addCards([createCard({ ...clean, deckId: deck.id, userId: user.id })])
             }
             setEditingCard(null)
             setAddMode(null)
@@ -177,6 +191,7 @@ export function ExerciseDetailPage() {
           onDelete={
             editingCard
               ? () => {
+                  if (!window.confirm(t('deck.confirmDeleteCard'))) return
                   deleteCard(editingCard.id)
                   setEditingCard(null)
                   setAddMode(null)

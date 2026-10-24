@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from 'react'
 import { t } from '../i18n/translate'
+import { cacheKey, queueKey } from '../lib/cache'
 import { supabase } from '../lib/supabase'
 
 type AuthStore = {
@@ -100,6 +101,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return null
       },
       signOut: async () => {
+        const userId = session?.user?.id
+        if (userId) {
+          localStorage.removeItem(cacheKey(userId))
+          localStorage.removeItem(queueKey(userId))
+        }
         await supabase.auth.signOut()
       },
     }),

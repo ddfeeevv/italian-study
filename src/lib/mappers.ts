@@ -85,7 +85,7 @@ export function mapCard(row: CardRow): Card {
     translation: row.translation,
     sentence: row.sentence ?? undefined,
     target: row.target,
-    options: row.options ?? [],
+    options: Array.isArray(row.options) ? row.options : [],
     explanation: row.explanation ?? undefined,
     notes: row.notes ?? undefined,
     stage: row.stage,

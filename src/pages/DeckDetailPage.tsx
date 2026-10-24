@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { SpeakButton } from '../components/SpeakButton'
 import { Button, EmptyState, Field, IconButton, Input, List, Page, Sheet, Textarea } from '../components/ui'
-import { linesToCards, parseWordText } from '../lib/import-export'
+import { linesToCards, parseWordText, sanitizeUserInput } from '../lib/import-export'
 import { createCard, dueCount, vocabCards } from '../lib/srs'
 import { speechText } from '../lib/tts'
 import { subjectSpeech } from '../lib/subjects'
@@ -154,10 +154,23 @@ export function DeckDetailPage() {
           }}
           onSave={(draft) => {
             if (!user) return
+            const clean = {
+              ...draft,
+              term: sanitizeUserInput(draft.term),
+              translation: draft.translation ? sanitizeUserInput(draft.translation) : undefined,
+              target: sanitizeUserInput(draft.target || draft.term),
+              explanation: draft.explanation ? sanitizeUserInput(draft.explanation) : undefined,
+              notes: draft.notes ? sanitizeUserInput(draft.notes) : undefined,
+            }
             if (editingCard) {
-              updateCard({ ...editingCard, ...draft, target: draft.target || draft.term })
+              updateCard({
+                ...editingCard,
+                ...clean,
+                translation: clean.translation ?? editingCard.translation,
+                target: clean.target || clean.term,
+              })
             } else {
-              addCards([createCard({ ...draft, deckId: deck.id, userId: user.id })])
+              addCards([createCard({ ...clean, deckId: deck.id, userId: user.id })])
             }
             setEditingCard(null)
             setAddMode(null)
@@ -165,6 +178,7 @@ export function DeckDetailPage() {
           onDelete={
             editingCard
               ? () => {
+                  if (!window.confirm(t('deck.confirmDeleteCard'))) return
                   deleteCard(editingCard.id)
                   setEditingCard(null)
                   setAddMode(null)

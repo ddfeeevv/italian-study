@@ -14,10 +14,25 @@ export function AuthPage() {
   const [password, setPassword] = useState('')
   const [message, setMessage] = useState<{ tone: 'error' | 'info'; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
+  const [rateLimitUntil, setRateLimitUntil] = useState(0)
 
   if (session) return <Navigate to="/" replace />
 
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+
   const submit = async () => {
+    if (Date.now() < rateLimitUntil) {
+      setMessage({ tone: 'error', text: t('auth.waitRetry') })
+      return
+    }
+    if (!emailOk) {
+      setMessage({ tone: 'error', text: t('auth.badEmail') })
+      return
+    }
+    if (mode !== 'magic' && password.length < 8) {
+      setMessage({ tone: 'error', text: t('auth.passwordShort', { min: 8 }) })
+      return
+    }
     setBusy(true)
     setMessage(null)
     const error =
@@ -29,6 +44,7 @@ export function AuthPage() {
     setBusy(false)
     if (error) {
       setMessage({ tone: 'error', text: error })
+      setRateLimitUntil(Date.now() + 3000)
       return
     }
     if (mode === 'magic' || mode === 'up') {
@@ -106,7 +122,7 @@ export function AuthPage() {
                 />
               </Field>
             ) : null}
-            <Button className="w-full" disabled={busy || !email} onClick={() => void submit()}>
+            <Button className="w-full" disabled={busy || !email.trim()} onClick={() => void submit()}>
               {mode === 'magic' ? t('auth.sendLink') : mode === 'up' ? t('auth.createAccount') : t('auth.signIn')}
             </Button>
             {message ? (

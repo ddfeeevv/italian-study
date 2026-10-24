@@ -30,7 +30,11 @@ export function MultipleChoice({
             key={`${option}-${index}`}
             type="button"
             disabled={disabled}
-            onClick={() => onSelect(option)}
+            onClick={(event) => {
+              if (disabled) return
+              event.currentTarget.disabled = true
+              onSelect(option)
+            }}
             className={clsx(
               'flex min-h-16 items-center gap-3 rounded-2xl border px-4 py-4 text-left text-lg font-semibold transition active:scale-[0.99]',
               status === 'idle' && 'border-line bg-card text-fg hover:border-accent',

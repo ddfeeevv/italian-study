@@ -43,6 +43,17 @@ export function clsx(...parts: Array<string | false | null | undefined>): string
   return parts.filter(Boolean).join(' ')
 }
 
+export function debounce<Args extends unknown[]>(
+  func: (...args: Args) => void,
+  wait: number,
+): (...args: Args) => void {
+  let timeout: ReturnType<typeof setTimeout> | null = null
+  return (...args: Args) => {
+    if (timeout) clearTimeout(timeout)
+    timeout = setTimeout(() => func(...args), wait)
+  }
+}
+
 export function downloadJson(filename: string, data: unknown): void {
   const blob = new Blob([JSON.stringify(data, null, 2)], {
     type: 'application/json',

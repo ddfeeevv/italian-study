@@ -90,6 +90,7 @@ export function SessionView({
   const previewSeenRef = useRef<QueueItem[]>([])
   const advanceTimerRef = useRef<number | null>(null)
   const explainReadyAtRef = useRef(0)
+  const isMountedRef = useRef(true)
 
   const cardMap = useMemo(() => new Map(allCards.map((card) => [card.id, card])), [allCards])
   const current = runtime.current
@@ -111,6 +112,7 @@ export function SessionView({
   }
 
   const applyRuntime = (nextRuntime: SessionRuntime) => {
+    if (!isMountedRef.current) return
     pendingRuntimeRef.current = null
     clearAdvanceTimer()
     runtimeRef.current = nextRuntime
@@ -153,7 +155,15 @@ export function SessionView({
     )
   }, [current?.cardId, current?.tier, currentCard?.id, settings.autoPlayAudio, answerRevealed, isPreview, speech.locale])
 
-  useEffect(() => () => clearAdvanceTimer(), [])
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false
+      clearAdvanceTimer()
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.cancel()
+      }
+    }
+  }, [])
 
   const goNext = (nextRuntime = runtime, immediate = false) => {
     pendingRuntimeRef.current = nextRuntime

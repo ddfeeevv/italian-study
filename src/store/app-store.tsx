@@ -15,7 +15,7 @@ import { mapCard, mapDeck, mapSubject, toCardRow, toDeckRow, toSubjectRow } from
 import { dueCount, vocabCards } from '../lib/srs'
 import { cardsInSubject, prepareSubjects, subjectFromPreset, topicSubject, presetById } from '../lib/subjects'
 import { supabase } from '../lib/supabase'
-import { nowIso, uid } from '../lib/utils'
+import { debounce, nowIso, uid } from '../lib/utils'
 import type { AppData, Card, Deck, Settings, Subject, SyncStatus } from '../types/models'
 import { useAuth } from './auth-store'
 
@@ -73,8 +73,11 @@ function reducer(state: AppData, action: Action): AppData {
       }
     case 'set-settings':
       return { ...state, settings: { ...state.settings, ...action.settings } }
-    default:
+    default: {
+      const exhaustiveCheck: never = action
+      console.error('[reducer] Unhandled action type:', exhaustiveCheck)
       return state
+    }
   }
 }
 
@@ -121,6 +124,14 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   dataRef.current = data
   userRef.current = user?.id
 
+  const debouncedSaveCache = useMemo(
+    () =>
+      debounce((userId: string, next: AppData) => {
+        saveCache(userId, next)
+      }, 500),
+    [],
+  )
+
   const markSynced = useCallback(() => {
     setSyncStatus('synced')
     setSyncError(null)
@@ -157,8 +168,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!user) return
-    saveCache(user.id, data)
-  }, [data, user])
+    debouncedSaveCache(user.id, data)
+  }, [data, user, debouncedSaveCache])
 
   useEffect(() => {
     const onOnline = () => {
@@ -318,8 +329,12 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       } while (flushAgainRef.current && queueRef.current.length > 0)
 
       if (queueRef.current.length === 0) markSynced()
-      else markError(new Error(t('sync.queueStuck')))
+      else {
+        console.error('[parola] failed operations:', queueRef.current)
+        markError(new Error(t('sync.queueStuck')))
+      }
     } catch (err) {
+      console.error('[parola] failed operations:', queueRef.current, err)
       markError(err)
     } finally {
       flushingRef.current = false
@@ -347,10 +362,14 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         }
 
         const loaded = await loadRemote(userId)
+        const hasUnsyncedUpserts = queueRef.current.some(
+          (op) => op.kind === 'upsert-card' || op.kind === 'upsert-deck' || op.kind === 'upsert-subject',
+        )
         const remoteBehindLocal =
-          dataRef.current.cards.length > loaded.cards.length ||
-          dataRef.current.decks.length > loaded.decks.length ||
-          (loaded.subjects !== null && dataRef.current.subjects.length > loaded.subjects.length)
+          hasUnsyncedUpserts &&
+          (dataRef.current.cards.length > loaded.cards.length ||
+            dataRef.current.decks.length > loaded.decks.length ||
+            (loaded.subjects !== null && dataRef.current.subjects.length > loaded.subjects.length))
 
         if (remoteBehindLocal) {
           queueAllLocal()

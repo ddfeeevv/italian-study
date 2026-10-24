@@ -1,6 +1,15 @@
 import type { Card, CardType } from '../types/models'
 import { createCard } from './srs'
 
+export function sanitizeUserInput(input: string): string {
+  if (!input) return ''
+  return input
+    .replace(/<[^>]*>/g, '')
+    .replace(/javascript:/gi, '')
+    .replace(/on\w+\s*=/gi, '')
+    .trim()
+}
+
 export type ParsedCard = {
   type: CardType
   term: string
@@ -76,13 +85,13 @@ export function linesToCards(deckId: string, userId: string, lines: ParsedCard[]
       deckId,
       userId,
       type: line.type,
-      term: line.term,
-      translation: line.translation,
-      sentence: line.sentence,
-      target: line.target,
-      options: line.options,
-      explanation: line.explanation,
-      notes: line.notes,
+      term: sanitizeUserInput(line.term),
+      translation: line.translation ? sanitizeUserInput(line.translation) : undefined,
+      sentence: line.sentence ? sanitizeUserInput(line.sentence) : undefined,
+      target: line.target ? sanitizeUserInput(line.target) : undefined,
+      options: line.options?.map(sanitizeUserInput),
+      explanation: line.explanation ? sanitizeUserInput(line.explanation) : undefined,
+      notes: line.notes ? sanitizeUserInput(line.notes) : undefined,
     }),
   )
 }

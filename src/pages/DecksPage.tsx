@@ -12,9 +12,19 @@ const COLORS = ['#C45C26', '#3F6F5B', '#3D5A80', '#8B4D6B', '#B0892B']
 
 export function DecksPage() {
   const { t, countInline } = useI18n()
-  const { decks, cards, activeSubject } = useAppStore()
+  const { decks, cards, activeSubject, ready } = useAppStore()
   const wordDecks = decksInSubject(decks, activeSubject?.id).filter((deck) => deck.kind !== 'exercise')
   const [creating, setCreating] = useState(false)
+
+  if (!ready) {
+    return (
+      <Page>
+        <div className="flex flex-1 items-center justify-center">
+          <p className="text-muted">{t('decks.loading')}</p>
+        </div>
+      </Page>
+    )
+  }
 
   return (
     <Page>

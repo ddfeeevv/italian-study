@@ -5,8 +5,12 @@ export const supabaseUrl = import.meta.env.VITE_SUPABASE_URL ?? ''
 export const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY ?? ''
 export const supabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey)
 
-const url = supabaseUrl || 'https://xxzsivlzbiktxjmdadkr.supabase.co'
-const anonKey = supabaseAnonKey || 'public-anon-key'
+if (!supabaseConfigured) {
+  console.warn('[supabase] Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY')
+}
+
+const url = supabaseUrl || 'http://127.0.0.1:54321'
+const anonKey = supabaseAnonKey || 'missing-anon-key'
 
 export type SubjectRow = {
   id: string

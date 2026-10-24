@@ -18,7 +18,7 @@ export function SyncBadge({ compact = false }: { compact?: boolean }) {
     offline: t('sync.offline'),
     error: t('sync.error'),
   }
-  return (
+  const badge = (
     <button
       type="button"
       onClick={retrySync}
@@ -43,5 +43,16 @@ export function SyncBadge({ compact = false }: { compact?: boolean }) {
       <span className={`rounded-full ${DOT[syncStatus]} ${compact ? 'size-2.5' : 'size-2'}`} />
       {compact ? null : label[syncStatus]}
     </button>
+  )
+
+  if (compact || syncStatus !== 'error') return badge
+
+  return (
+    <span className="inline-flex flex-col items-end gap-1">
+      {badge}
+      <button type="button" onClick={retrySync} className="text-[10px] text-danger underline">
+        {t('sync.retry')}
+      </button>
+    </span>
   )
 }

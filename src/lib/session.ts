@@ -22,6 +22,7 @@ export type SessionTier = 0 | 1 | 2
 export type QueueItem = {
   cardId: string
   tier: SessionTier
+  attempts?: number
 }
 
 export type SessionRuntime = {
@@ -177,10 +178,19 @@ export function applyIncorrect(runtime: SessionRuntime): SessionRuntime {
   const { cardId, tier } = runtime.current
   if (tier === 0) return applyPreviewDone(runtime)
 
+  const currentAttempts = (runtime.current.attempts ?? 0) + 1
   const failedIds = runtime.failedIds.includes(cardId)
     ? runtime.failedIds
     : [...runtime.failedIds, cardId]
-  const queue = insertLater(runtime.queue, { cardId, tier }, RETRY_GAP_MIN, RETRY_GAP_MAX)
+  if (currentAttempts >= 3) {
+    return nextQuestion(runtime, runtime.queue, { failedIds })
+  }
+  const queue = insertLater(
+    runtime.queue,
+    { cardId, tier, attempts: currentAttempts },
+    RETRY_GAP_MIN,
+    RETRY_GAP_MAX,
+  )
   return nextQuestion(runtime, queue, { failedIds })
 }
 
@@ -294,6 +304,7 @@ function legacyChoices(
       options.push(term)
     }
   }
+  if (options.length < 2) options.push('—')
 
   return shuffle(options)
 }
