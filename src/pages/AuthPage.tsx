@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { LanguageMenu } from '../components/LanguageSwitcher'
-import { Mascot } from '../components/Mascot'
 import { Button, Card, Field, Input, Screen } from '../components/ui'
 import { useI18n } from '../i18n/translate'
 import { supabaseConfigured } from '../lib/supabase'
@@ -54,26 +53,16 @@ export function AuthPage() {
   }
 
   return (
-    <Screen>
-      <div className="flex flex-1 flex-col lg:grid lg:grid-cols-2">
-        <aside className="hidden flex-col justify-between border-r border-line bg-card px-12 py-10 lg:flex">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">Parola</p>
-          <Mascot />
-        </aside>
-        <main className="flex flex-1 flex-col justify-center px-5 py-10 lg:px-16">
-          <div className="mx-auto w-full max-w-md">
+    <Screen className="relative">
+      <main className="flex flex-1 items-center justify-center px-5 py-10">
+        <div className="w-full max-w-xl">
           <div className="mb-6 flex justify-end">
             <LanguageMenu />
           </div>
-          <div className="lg:hidden">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">Parola</p>
-          <h1 className="mt-2 font-display text-4xl">{t('auth.mobileTitle')}</h1>
-          <p className="mt-3 text-sm leading-6 text-muted">{t('auth.mobileText')}</p>
-        </div>
-        <div className="mb-6 hidden lg:block">
-          <h1 className="font-display text-4xl">{t('auth.loginTitle')}</h1>
-          <p className="mt-2 text-sm leading-6 text-muted">{t('auth.loginText')}</p>
-        </div>
+          <div className="mb-6">
+            <h1 className="font-display text-4xl">{t('auth.loginTitle')}</h1>
+            <p className="mt-2 text-sm leading-6 text-muted">{t('auth.loginText')}</p>
+          </div>
 
         {!supabaseConfigured ? (
           <Card className="mt-6 px-4 py-4 text-sm leading-6 text-warn">
@@ -136,9 +125,11 @@ export function AuthPage() {
             ) : null}
           </Card>
         )}
-          </div>
-        </main>
-      </div>
+        </div>
+      </main>
+      <p className="pointer-events-none absolute top-5 left-5 text-xs font-semibold uppercase tracking-[0.18em] text-accent sm:top-8 sm:left-8">
+        Parola
+      </p>
     </Screen>
   )
 }
