@@ -3,7 +3,12 @@ import { clsx } from '../lib/utils'
 
 export function Screen({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={clsx('mx-auto flex min-h-dvh w-full max-w-md flex-col bg-bg md:border-x md:border-line', className)}>
+    <div
+      className={clsx(
+        'mx-auto flex min-h-dvh w-full max-w-md flex-col bg-bg md:border-x md:border-line lg:max-w-none lg:border-x-0',
+        className,
+      )}
+    >
       {children}
     </div>
   )
@@ -11,7 +16,46 @@ export function Screen({ children, className }: { children: ReactNode; className
 
 export function Page({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <main className={clsx('flex-1 px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-4', className)}>{children}</main>
+    <main
+      className={clsx(
+        'mx-auto w-full max-w-6xl flex-1 px-4 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-4 lg:px-10 lg:pb-12 lg:pt-6',
+        className,
+      )}
+    >
+      {children}
+    </main>
+  )
+}
+
+export function Sheet({
+  children,
+  onClose,
+  className,
+}: {
+  children: ReactNode
+  onClose?: () => void
+  className?: string
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 sm:items-center sm:p-6"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-lg"
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+      >
+        <Card
+          className={clsx(
+            'max-h-[92dvh] overflow-y-auto rounded-b-none px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-5 sm:max-h-[min(85dvh,760px)] sm:rounded-3xl sm:pb-6',
+            className,
+          )}
+        >
+          {children}
+        </Card>
+      </div>
+    </div>
   )
 }
 
@@ -126,7 +170,7 @@ export function EmptyState({
   action?: ReactNode
 }) {
   return (
-    <Card className="px-6 py-10 text-center">
+    <Card className="mx-auto w-full max-w-lg px-6 py-10 text-center">
       <h2 className="font-display text-2xl text-fg">{title}</h2>
       <p className="mt-2 text-sm leading-6 text-muted">{text}</p>
       {action ? <div className="mt-6">{action}</div> : null}

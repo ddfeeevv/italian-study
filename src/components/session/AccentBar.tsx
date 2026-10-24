@@ -42,9 +42,9 @@ export function AccentBar({ offset = 0 }: { offset?: number }) {
 
   return (
     <div
-      className="fixed inset-x-0 z-30 mx-auto flex w-full max-w-md justify-center gap-2 border-t border-line bg-card/95 px-3 pt-2 backdrop-blur"
+      className="fixed bottom-0 left-1/2 z-30 flex w-full max-w-md -translate-x-1/2 justify-center gap-2 border-t border-line bg-card/95 px-3 pt-2 backdrop-blur lg:bottom-8 lg:w-auto lg:max-w-none lg:rounded-full lg:border lg:px-3 lg:shadow-[var(--shadow)]"
       style={{
-        bottom: lift,
+        ...(lift > 0 ? { bottom: lift } : {}),
         paddingBottom: lift > 80 ? '0.5rem' : 'max(0.5rem, env(safe-area-inset-bottom))',
       }}
     >

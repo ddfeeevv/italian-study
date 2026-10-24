@@ -2,12 +2,15 @@ export type Stage = 0 | 1 | 2 | 3 | 4 | 5
 
 export type CardType = 'vocab' | 'cloze' | 'transform'
 
+export type DeckKind = 'words' | 'exercise'
+
 export type Deck = {
   id: string
   userId: string
   title: string
   description: string
   color?: string
+  kind?: DeckKind
   createdAt: string
 }
 

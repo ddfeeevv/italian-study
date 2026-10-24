@@ -1,22 +1,22 @@
 import { useMemo } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { SessionView } from '../components/session/SessionView'
-import { dueCards } from '../lib/srs'
+import { dueCards, exerciseCards, vocabCards } from '../lib/srs'
 import { useAppStore } from '../store/app-store'
 
-export function SessionPage() {
+export function SessionPage({ kind }: { kind: 'vocab' | 'exercise' }) {
   const { deckId } = useParams()
-  const [params] = useSearchParams()
-  const practice = params.get('mode') === 'all'
+  const practice = kind === 'exercise'
   const { decks, cards } = useAppStore()
 
   const deck = decks.find((item) => item.id === deckId)
-  const scoped = deckId ? cards.filter((card) => card.deckId === deckId) : cards
+  const ofKind = kind === 'vocab' ? vocabCards(cards) : exerciseCards(cards)
+  const scoped = deckId ? ofKind.filter((card) => card.deckId === deckId) : ofKind
   const sessionCards = useMemo(
-    () => (practice ? scoped : dueCards(scoped)),
-    [practice, scoped],
+    () => (kind === 'exercise' || practice ? scoped : dueCards(scoped)),
+    [kind, practice, scoped],
   )
 
-  const title = deck ? deck.title : 'Сегодня'
-  return <SessionView cards={sessionCards} title={title} practice={practice} />
+  const title = deck ? deck.title : kind === 'exercise' ? 'Упражнения' : 'Сегодня'
+  return <SessionView cards={sessionCards} title={title} practice={practice} kind={kind} />
 }

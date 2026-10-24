@@ -21,7 +21,7 @@ export function ExplanationSheet({
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 px-0 sm:items-center"
+      className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 sm:items-center sm:p-6"
       onKeyDown={(event) => {
         if (event.key === 'Enter' && ready) {
           event.preventDefault()
@@ -30,7 +30,7 @@ export function ExplanationSheet({
         }
       }}
     >
-      <Card className="animate-rise w-full max-w-md rounded-b-none px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-5 sm:rounded-3xl">
+      <Card className="animate-rise w-full max-w-lg rounded-b-none px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-5 sm:rounded-3xl sm:pb-6">
         <p className="text-sm font-semibold uppercase tracking-[0.14em] text-danger">Ошибка</p>
         <p className="mt-3 flex items-center gap-2 text-sm text-muted">
           Правильно: <span className="font-display text-xl text-fg">{answer}</span>

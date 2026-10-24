@@ -1,4 +1,5 @@
-import type { Card } from '../types/models'
+import type { Card, Deck } from '../types/models'
+import { needsIntroduction } from './srs'
 import { insertLater, shuffle } from './utils'
 
 /** Session takes one batch of this many cards (clamped to available). */
@@ -34,6 +35,8 @@ export type SessionRuntime = {
   completedIds: string[]
   failedIds: string[]
   passedTier1: string[]
+  /** This batch still has a first-meeting card, so phase 1 is the introduction. */
+  hasPreview: boolean
   status: 'active' | 'complete' | 'empty'
 }
 
@@ -55,49 +58,37 @@ export function needsMultipleChoice(card: Card): boolean {
   return true
 }
 
-export function createSession(cards: Card[]): SessionRuntime {
+export function createSession(
+  cards: Card[],
+  options?: { takeAll?: boolean; limit?: number; skipPreview?: boolean },
+): SessionRuntime {
   const unique = uniqueById(cards)
-  if (unique.length === 0) {
-    return {
-      phase: 'mc',
-      batchIds: [],
-      skipMcIds: [],
-      queue: [],
-      current: null,
-      total: 0,
-      completedIds: [],
-      failedIds: [],
-      passedTier1: [],
-      status: 'empty',
-    }
-  }
+  if (unique.length === 0) return emptySession()
 
-  const batch = shuffle(unique).slice(0, pickBatchSize(unique.length))
+  let batch: Card[]
+  if (typeof options?.limit === 'number') {
+    const n = Math.max(0, Math.floor(options.limit))
+    batch = n === 0 ? [] : shuffle(unique).slice(0, Math.min(n, unique.length))
+  } else if (options?.takeAll) {
+    batch = shuffle(unique)
+  } else {
+    batch = shuffle(unique).slice(0, pickBatchSize(unique.length))
+  }
+  if (batch.length === 0) return emptySession()
   const batchIds = batch.map((card) => card.id)
   const byId = new Map(batch.map((card) => [card.id, card]))
   const skipMcIds = batch.filter((card) => !needsMultipleChoice(card)).map((card) => card.id)
 
-  const previewQueue: QueueItem[] = shuffle(
-    batchIds.filter((id) => byId.get(id)?.type === 'vocab'),
-  ).map((cardId) => ({ cardId, tier: 0 as const }))
+  const previewQueue: QueueItem[] = options?.skipPreview
+    ? []
+    : shuffle(
+        batchIds.filter((id) => {
+          const card = byId.get(id)
+          return card ? needsIntroduction(card) : false
+        }),
+      ).map((cardId) => ({ cardId, tier: 0 as const }))
 
-  if (previewQueue.length > 0) {
-    const [current, ...rest] = previewQueue
-    return {
-      phase: 'preview',
-      batchIds,
-      skipMcIds,
-      queue: rest,
-      current,
-      total: batchIds.length,
-      completedIds: [],
-      failedIds: [],
-      passedTier1: [],
-      status: 'active',
-    }
-  }
-
-  return startMcPhase({
+  const shell: SessionRuntime = {
     phase: 'preview',
     batchIds,
     skipMcIds,
@@ -107,8 +98,49 @@ export function createSession(cards: Card[]): SessionRuntime {
     completedIds: [],
     failedIds: [],
     passedTier1: [],
+    hasPreview: previewQueue.length > 0,
     status: 'active',
-  })
+  }
+
+  if (previewQueue.length === 0) return startMcPhase(shell)
+
+  const [current, ...rest] = previewQueue
+  return {
+    ...shell,
+    queue: rest,
+    current,
+  }
+}
+
+function emptySession(): SessionRuntime {
+  return {
+    phase: 'mc',
+    batchIds: [],
+    skipMcIds: [],
+    queue: [],
+    current: null,
+    total: 0,
+    completedIds: [],
+    failedIds: [],
+    passedTier1: [],
+    hasPreview: false,
+    status: 'empty',
+  }
+}
+
+/** Exam miss: record it and move on. The card is not asked again. */
+export function applyExamMiss(runtime: SessionRuntime): SessionRuntime {
+  if (!runtime.current) return runtime
+  const { cardId, tier } = runtime.current
+  if (tier === 0) return applyPreviewDone(runtime)
+
+  const failedIds = runtime.failedIds.includes(cardId) ? runtime.failedIds : [...runtime.failedIds, cardId]
+  if (tier === 1) return nextQuestion(runtime, runtime.queue, { failedIds })
+
+  const completedIds = runtime.completedIds.includes(cardId)
+    ? runtime.completedIds
+    : [...runtime.completedIds, cardId]
+  return nextQuestion(runtime, runtime.queue, { failedIds, completedIds })
 }
 
 export function applyPreviewDone(runtime: SessionRuntime): SessionRuntime {
@@ -165,12 +197,41 @@ export function cardAnswer(card: Card): string {
   return card.target || card.term
 }
 
+/** Other decks of the same kind stand in for "subject" until decks have one. */
+export function sameKindPool(card: Card, cards: Card[], decks: Deck[]): Card[] {
+  const kinds = new Map(decks.map((deck) => [deck.id, deck.kind === 'exercise' ? 'exercise' : 'words']))
+  const kind = kinds.get(card.deckId) ?? 'words'
+  return cards.filter((item) => (kinds.get(item.deckId) ?? 'words') === kind)
+}
+
+const MC_OPTION_COUNT = 4
+const HONEST_DISTRACTORS = MC_OPTION_COUNT - 1
+/** First token at most this long can be a repeated particle ("il", "the", "der"). */
+const SHORT_TOKEN_MAX = 3
+const SUFFIX_LENGTHS = [4, 3, 2] as const
+
+type WrittenScript = 'latin' | 'cyrillic' | 'digit' | 'other'
+
+type AnswerForm = {
+  raw: string
+  script: WrittenScript
+  wordCount: number
+  /** Short first token, lowercased, when the answer is more than one word. */
+  first: string | null
+  /** Last word, lowercased, without diacritics or edge punctuation. */
+  last: string
+  length: number
+}
+
 /**
  * If `card.options` is set — use those exact choices (shuffled).
- * Otherwise for vocab/cloze pick Italian `target` forms from other cards.
+ * Otherwise prefer distractors of the same visible form (script, word count,
+ * repeated short first token, repeated ending, similar length). `subjectPool`
+ * may include other decks of the same subject. Fewer than three such neighbors
+ * falls back to the previous same-deck selection.
  * Transform without options should skip MC entirely (`needsMultipleChoice`).
  */
-export function buildChoices(card: Card, pool: Card[]): string[] {
+export function buildChoices(card: Card, pool: Card[], subjectPool: Card[] = pool): string[] {
   const correct = cardAnswer(card).trim()
   const correctKey = normalizeAnswer(correct)
   const explicit = (card.options ?? []).map((option) => option.trim()).filter(Boolean)
@@ -189,6 +250,15 @@ export function buildChoices(card: Card, pool: Card[]): string[] {
     return shuffle(options)
   }
 
+  const honest = honestDistractors(correct, card.id, subjectPool)
+  if (honest.length >= HONEST_DISTRACTORS) {
+    return shuffle([correct, ...shuffle(honest).slice(0, HONEST_DISTRACTORS)])
+  }
+
+  return legacyChoices(card, pool, correct, correctKey)
+}
+
+function legacyChoices(card: Card, pool: Card[], correct: string, correctKey: string): string[] {
   const fromPool = shuffle(
     pool.filter((item) => item.id !== card.id && item.type === card.type),
   )
@@ -207,13 +277,145 @@ export function buildChoices(card: Card, pool: Card[]): string[] {
 
   const options = correct ? [correct] : []
   for (const term of [...fromPool, ...fromAny, ...extras]) {
-    if (options.length >= 4) break
+    if (options.length >= MC_OPTION_COUNT) break
     if (!options.some((option) => normalizeAnswer(option) === normalizeAnswer(term))) {
       options.push(term)
     }
   }
 
   return shuffle(options)
+}
+
+/**
+ * Distractors that share the answer's shape, learned from the pool rather than
+ * from a language word list. A repeated short first word (or a repeated
+ * apostrophe particle such as "l'") is the group. Otherwise the longest shared
+ * ending that still has three neighbors is the group.
+ */
+function honestDistractors(correct: string, cardId: string, pool: Card[]): string[] {
+  if (!correct || !isItalianProductionForm(correct)) return []
+  const particles = repeatedParticles([
+    correct,
+    ...pool.filter((item) => item.id !== cardId).map((item) => (item.target || '').trim()),
+  ])
+  const answer = answerForm(correct, particles)
+  if (!answer) return []
+
+  const forms = distinctForms(pool, cardId, normalizeAnswer(correct), particles)
+  const close = forms.filter((form) => sameSlot(answer, form) && lengthClose(form.length, answer.length))
+  if (answer.first && close.length >= HONEST_DISTRACTORS) {
+    return close.map((form) => form.raw)
+  }
+
+  const ending = endingWithEnoughNeighbors(answer, close)
+  if (!ending) return []
+  return close.filter((form) => form.last.endsWith(ending)).map((form) => form.raw)
+}
+
+function distinctForms(
+  pool: Card[],
+  cardId: string,
+  correctKey: string,
+  particles: Set<string>,
+): AnswerForm[] {
+  const seen = new Set<string>()
+  const forms: AnswerForm[] = []
+  for (const item of pool) {
+    if (item.id === cardId) continue
+    const raw = (item.target || '').trim()
+    if (!raw || !isItalianProductionForm(raw)) continue
+    const key = normalizeAnswer(raw)
+    if (!key || key === correctKey || seen.has(key)) continue
+    const form = answerForm(raw, particles)
+    if (!form) continue
+    seen.add(key)
+    forms.push(form)
+  }
+  return forms
+}
+
+function answerForm(raw: string, particles: Set<string>): AnswerForm | null {
+  const trimmed = raw.trim()
+  const parts = withParticleSplit(trimmed, particles).split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return null
+  const cores = parts.map(tokenCore)
+  const last = cores[cores.length - 1] ?? ''
+  if (!last) return null
+  const firstCore = cores[0] ?? ''
+  const first =
+    parts.length >= 2 && firstCore.length >= 1 && firstCore.length <= SHORT_TOKEN_MAX ? firstCore : null
+  return {
+    raw: trimmed,
+    script: writtenScript(trimmed),
+    wordCount: parts.length,
+    first,
+    last,
+    length: trimmed.length,
+  }
+}
+
+/** "l'amico" → "l amico" when that apostrophe particle shows up more than once. */
+function withParticleSplit(raw: string, particles: Set<string>): string {
+  const match = raw.match(/^(\p{L}{1,3})['’]\s*/u)
+  if (!match) return raw
+  const particle = match[1].toLowerCase()
+  if (!particles.has(particle)) return raw
+  const rest = raw.slice(match[0].length).trim()
+  if (!rest) return raw
+  return `${particle} ${rest}`
+}
+
+function repeatedParticles(values: string[]): Set<string> {
+  const counts = new Map<string, number>()
+  const seen = new Set<string>()
+  for (const value of values) {
+    const key = normalizeAnswer(value)
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    const match = value.trim().match(/^(\p{L}{1,3})['’]/u)
+    if (!match) continue
+    const particle = match[1].toLowerCase()
+    counts.set(particle, (counts.get(particle) ?? 0) + 1)
+  }
+  return new Set([...counts].filter(([, count]) => count >= 2).map(([particle]) => particle))
+}
+
+function endingWithEnoughNeighbors(answer: AnswerForm, close: AnswerForm[]): string | null {
+  for (const size of SUFFIX_LENGTHS) {
+    if (answer.last.length <= size) continue
+    const suffix = answer.last.slice(-size)
+    const count = close.filter((form) => form.last.length > size && form.last.endsWith(suffix)).length
+    if (count >= HONEST_DISTRACTORS) return suffix
+  }
+  return null
+}
+
+function tokenCore(token: string): string {
+  return stripDiacritics(token.toLowerCase()).replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')
+}
+
+function writtenScript(value: string): WrittenScript {
+  const letters = value.match(/\p{L}/gu) ?? []
+  if (letters.length === 0) return /\p{N}/u.test(value) ? 'digit' : 'other'
+  let latin = 0
+  let cyrillic = 0
+  for (const char of letters) {
+    if (/\p{Script=Cyrillic}/u.test(char)) cyrillic += 1
+    else if (/\p{Script=Latin}/u.test(char)) latin += 1
+  }
+  if (cyrillic > latin) return 'cyrillic'
+  if (latin > 0) return 'latin'
+  return 'other'
+}
+
+function sameSlot(answer: AnswerForm, form: AnswerForm): boolean {
+  return form.script === answer.script && form.wordCount === answer.wordCount && form.first === answer.first
+}
+
+function lengthClose(length: number, anchor: number): boolean {
+  const shorter = Math.min(length, anchor)
+  if (shorter <= 0) return false
+  return Math.max(length, anchor) / shorter <= 1.75
 }
 
 /** Reject Cyrillic glosses / long explanations that must never appear as MC options. */

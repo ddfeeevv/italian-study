@@ -35,12 +35,34 @@ export function AuthPage() {
 
   return (
     <Screen>
-      <main className="flex flex-1 flex-col justify-center px-5">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">Parola</p>
-        <h1 className="mt-2 font-display text-4xl">Учить итальянский с любого устройства</h1>
-        <p className="mt-3 text-sm leading-6 text-muted">
-          Войдите, чтобы колоды, грамматика и прогресс SRS синхронизировались через Supabase.
-        </p>
+      <div className="flex flex-1 flex-col lg:grid lg:grid-cols-2">
+        <aside className="hidden flex-col justify-between border-r border-line bg-card px-12 py-10 lg:flex">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">Parola</p>
+            <h1 className="mt-6 max-w-md font-display text-5xl leading-tight">
+              Учить итальянский с телефона и с ноутбука
+            </h1>
+            <p className="mt-4 max-w-sm text-sm leading-6 text-muted">
+              Колоды, грамматика и интервалы повторения синхронизируются через Supabase.
+            </p>
+          </div>
+          <p className="text-sm text-muted">Интервалы: 1 → 3 → 7 → 14 → 30 дней</p>
+        </aside>
+        <main className="flex flex-1 flex-col justify-center px-5 py-10 lg:px-16">
+          <div className="mx-auto w-full max-w-md">
+        <div className="lg:hidden">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">Parola</p>
+          <h1 className="mt-2 font-display text-4xl">Учить итальянский с любого устройства</h1>
+          <p className="mt-3 text-sm leading-6 text-muted">
+            Войдите, чтобы колоды, грамматика и прогресс SRS синхронизировались через Supabase.
+          </p>
+        </div>
+        <div className="mb-6 hidden lg:block">
+          <h1 className="font-display text-4xl">Вход</h1>
+          <p className="mt-2 text-sm leading-6 text-muted">
+            Колоды и прогресс подтянутся из того же аккаунта, что и на телефоне.
+          </p>
+        </div>
 
         {!supabaseConfigured ? (
           <Card className="mt-6 px-4 py-4 text-sm leading-6 text-warn">
@@ -92,7 +114,9 @@ export function AuthPage() {
             {message ? <p className="text-center text-sm text-muted">{message}</p> : null}
           </Card>
         )}
-      </main>
+          </div>
+        </main>
+      </div>
     </Screen>
   )
 }

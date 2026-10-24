@@ -13,17 +13,33 @@ export type ParsedCard = {
 }
 
 export function parseBulkText(raw: string): ParsedCard[] {
-  return raw
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .flatMap((line) => {
-      if (/^(term|слово|тип|#)/i.test(line) && /translation|перевод|target/i.test(line)) {
-        return []
-      }
-      const parsed = parseLine(line)
-      return parsed ? [parsed] : []
-    })
+  return parseWordText(raw).items
+}
+
+export function parseWordText(raw: string): { items: ParsedCard[]; skipped: number } {
+  return parseFiltered(raw, (card) => card.type === 'vocab')
+}
+
+export function parseExerciseText(raw: string): { items: ParsedCard[]; skipped: number } {
+  return parseFiltered(raw, (card) => card.type !== 'vocab')
+}
+
+function parseFiltered(
+  raw: string,
+  keep: (card: ParsedCard) => boolean,
+): { items: ParsedCard[]; skipped: number } {
+  const items: ParsedCard[] = []
+  let skipped = 0
+  for (const line of raw.split(/\r?\n/).map((item) => item.trim()).filter(Boolean)) {
+    if (/^(term|слово|тип|#)/i.test(line) && /translation|перевод|target/i.test(line)) continue
+    const parsed = parseLine(line)
+    if (!parsed || !keep(parsed)) {
+      skipped += 1
+      continue
+    }
+    items.push(parsed)
+  }
+  return { items, skipped }
 }
 
 export function parseLine(line: string): ParsedCard | null {

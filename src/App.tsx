@@ -2,10 +2,12 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { AccountPage } from './pages/AccountPage'
-import { AddWordsPage } from './pages/AddWordsPage'
 import { AuthPage } from './pages/AuthPage'
 import { DeckDetailPage } from './pages/DeckDetailPage'
 import { DecksPage } from './pages/DecksPage'
+import { ExerciseDetailPage } from './pages/ExerciseDetailPage'
+import { ExercisesPage } from './pages/ExercisesPage'
+import { ExamPage, ExamSessionPage } from './pages/ExamPage'
 import { ReviewPage } from './pages/ReviewPage'
 import { SessionPage } from './pages/SessionPage'
 import { AppStoreProvider } from './store/app-store'
@@ -25,12 +27,18 @@ export default function App() {
                 <Route path="/" element={<DecksPage />} />
                 <Route path="/decks/:deckId" element={<DeckDetailPage />} />
                 <Route path="/review" element={<ReviewPage />} />
-                <Route path="/add" element={<AddWordsPage />} />
+                <Route path="/exercises" element={<ExercisesPage />} />
+                <Route path="/exercises/:deckId" element={<ExerciseDetailPage />} />
+                <Route path="/exam" element={<ExamPage />} />
+                <Route path="/add" element={<Navigate to="/" replace />} />
                 <Route path="/account" element={<AccountPage />} />
                 <Route path="/settings" element={<Navigate to="/account" replace />} />
               </Route>
-              <Route path="/study" element={<SessionPage />} />
-              <Route path="/study/:deckId" element={<SessionPage />} />
+              <Route path="/study" element={<SessionPage kind="vocab" />} />
+              <Route path="/study/:deckId" element={<SessionPage kind="vocab" />} />
+              <Route path="/drill" element={<Navigate to="/exercises" replace />} />
+              <Route path="/drill/:deckId" element={<SessionPage kind="exercise" />} />
+              <Route path="/exam/run" element={<ExamSessionPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

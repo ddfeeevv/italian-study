@@ -11,7 +11,7 @@ import {
 } from 'react'
 import { emptyData, loadCache, loadQueue, loadSettings, saveCache, saveQueue, saveSettings, type PendingOp } from '../lib/cache'
 import { mapCard, mapDeck, toCardRow, toDeckRow } from '../lib/mappers'
-import { dueCount } from '../lib/srs'
+import { dueCount, vocabCards } from '../lib/srs'
 import { supabase } from '../lib/supabase'
 import { nowIso, uid } from '../lib/utils'
 import type { AppData, Card, Deck, Settings, SyncStatus } from '../types/models'
@@ -72,7 +72,7 @@ type AppStore = {
   syncStatus: SyncStatus
   syncError: string | null
   ready: boolean
-  addDeck: (input: { title: string; description: string; color?: string }) => Deck | null
+  addDeck: (input: { title: string; description: string; color?: string; kind?: Deck['kind'] }) => Deck | null
   updateDeck: (deck: Deck) => void
   deleteDeck: (deckId: string) => void
   addCards: (cards: Card[]) => void
@@ -333,7 +333,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   )
 
   const addDeck = useCallback(
-    (input: { title: string; description: string; color?: string }) => {
+    (input: { title: string; description: string; color?: string; kind?: Deck['kind'] }) => {
       if (!user) return null
       const deck: Deck = {
         id: uid(),
@@ -341,6 +341,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         title: input.title.trim(),
         description: input.description.trim(),
         color: input.color,
+        kind: input.kind ?? 'words',
         createdAt: nowIso(),
       }
       dispatch({ type: 'add-deck', deck })
@@ -416,7 +417,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       decks: data.decks,
       cards: data.cards,
       settings: data.settings,
-      dueToday: dueCount(data.cards),
+      dueToday: dueCount(vocabCards(data.cards)),
       syncStatus,
       syncError,
       ready,

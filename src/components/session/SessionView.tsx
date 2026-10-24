@@ -1,19 +1,22 @@
-import { BookOpen, Check, Lightbulb, PencilLine, X } from 'lucide-react'
+import { BookOpen, Check, ChevronLeft, ChevronRight, Lightbulb, PencilLine, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { isTextInputFocused } from '../../lib/keyboard'
 import {
   applyCorrect,
+  applyExamMiss,
   applyIncorrect,
   applyPreviewDone,
   BATCH_SIZE_MAX,
   buildChoices,
   cardAnswer,
+  sameKindPool,
   checkSpelling,
   createSession,
   shouldAdvance,
   splitCloze,
   type SessionPhase,
+  type QueueItem,
   type SessionRuntime,
 } from '../../lib/session'
 import { advanceCard, failCard } from '../../lib/srs'
@@ -23,7 +26,7 @@ import { useAppStore } from '../../store/app-store'
 import type { Card } from '../../types/models'
 import { SpeakButton } from '../SpeakButton'
 import { SyncBadge } from '../SyncBadge'
-import { Button, EmptyState, IconButton, Screen } from '../ui'
+import { Button, Card as Panel, EmptyState, IconButton, Screen } from '../ui'
 import { AccentBar } from './AccentBar'
 import { ExplanationSheet } from './ExplanationSheet'
 import { MultipleChoice } from './MultipleChoice'
@@ -38,18 +41,38 @@ const PHASE_LABEL: Record<SessionPhase, string> = {
   spell: 'Фаза 3 · Написание',
 }
 
+function phaseLabel(phase: SessionPhase, hasPreview: boolean): string {
+  if (hasPreview) return PHASE_LABEL[phase]
+  if (phase === 'spell') return 'Фаза 2 · Написание'
+  return 'Фаза 1 · Выбор'
+}
+
 export function SessionView({
   cards,
   title,
   practice = false,
+  kind = 'vocab',
+  exam = false,
+  limit,
+  exitTo,
 }: {
   cards: Card[]
   title: string
   practice?: boolean
+  kind?: 'vocab' | 'exercise'
+  exam?: boolean
+  limit?: number
+  exitTo?: string
 }) {
   const navigate = useNavigate()
-  const { cards: allCards, settings, updateCard } = useAppStore()
-  const [runtime, setRuntime] = useState(() => createSession(cards))
+  const leave = () => {
+    if (exitTo) navigate(exitTo)
+    else navigate(-1)
+  }
+  const { cards: allCards, decks, settings, updateCard } = useAppStore()
+  const [runtime, setRuntime] = useState(() =>
+    createSession(cards, exam ? { limit, skipPreview: true } : { takeAll: kind === 'exercise' }),
+  )
   const [choices, setChoices] = useState<string[]>([])
   const [selected, setSelected] = useState<string | null>(null)
   const [mcStatus, setMcStatus] = useState<McStatus>('idle')
@@ -58,8 +81,12 @@ export function SessionView({
   const [showHint, setShowHint] = useState(false)
   const [locked, setLocked] = useState(false)
   const [explain, setExplain] = useState<{ answer: string; explanation?: string } | null>(null)
+  const [canPreviewBack, setCanPreviewBack] = useState(false)
+  const [previewGate, setPreviewGate] = useState(false)
 
   const pendingRuntimeRef = useRef<SessionRuntime | null>(null)
+  const runtimeRef = useRef(runtime)
+  const previewSeenRef = useRef<QueueItem[]>([])
   const advanceTimerRef = useRef<number | null>(null)
   const explainReadyAtRef = useRef(0)
 
@@ -69,6 +96,7 @@ export function SessionView({
   const pool = currentCard
     ? allCards.filter((card) => card.deckId === currentCard.deckId)
     : allCards
+  const subjectPool = currentCard ? sameKindPool(currentCard, allCards, decks) : allCards
 
   const clearAdvanceTimer = () => {
     if (advanceTimerRef.current) {
@@ -80,13 +108,14 @@ export function SessionView({
   const applyRuntime = (nextRuntime: SessionRuntime) => {
     pendingRuntimeRef.current = null
     clearAdvanceTimer()
+    runtimeRef.current = nextRuntime
     setRuntime(nextRuntime)
     setLocked(false)
   }
 
   useEffect(() => {
     if (!current || !currentCard) return
-    setChoices(buildChoices(currentCard, pool))
+    setChoices(buildChoices(currentCard, pool, subjectPool))
     setSelected(null)
     setMcStatus('idle')
     setSpellValue('')
@@ -144,8 +173,50 @@ export function SessionView({
 
   const explainReady = () => performance.now() >= explainReadyAtRef.current
 
+  const finishPreviewCard = () => {
+    const rt = runtimeRef.current
+    if (!rt.current || rt.current.tier !== 0) return
+    previewSeenRef.current = [...previewSeenRef.current, rt.current]
+    setCanPreviewBack(true)
+    setPreviewGate(false)
+    applyRuntime(applyPreviewDone(rt))
+  }
+
   const onPreviewContinue = () => {
-    applyRuntime(applyPreviewDone(runtime))
+    const rt = runtimeRef.current
+    if (!rt.current || rt.current.tier !== 0) return
+    if (rt.queue.length === 0) {
+      setPreviewGate(true)
+      return
+    }
+    finishPreviewCard()
+  }
+
+  const confirmPreviewEnd = () => {
+    const rt = runtimeRef.current
+    if (!rt.current || rt.current.tier !== 0 || rt.queue.length > 0) {
+      setPreviewGate(false)
+      return
+    }
+    finishPreviewCard()
+  }
+
+  const onPreviewBack = () => {
+    setPreviewGate(false)
+    const rt = runtimeRef.current
+    const seen = previewSeenRef.current
+    if (!rt.current || rt.current.tier !== 0 || seen.length === 0) return
+    const previous = seen[seen.length - 1]
+    const item = rt.current
+    previewSeenRef.current = seen.slice(0, -1)
+    setCanPreviewBack(previewSeenRef.current.length > 0)
+    applyRuntime({
+      ...rt,
+      phase: 'preview',
+      status: 'active',
+      current: previous,
+      queue: [item, ...rt.queue],
+    })
   }
 
   const onMcSelect = (option: string) => {
@@ -185,7 +256,7 @@ export function SessionView({
   const continueAfterError = () => {
     if (!explainReady()) return
     setExplain(null)
-    applyRuntime(applyIncorrect(runtime))
+    applyRuntime(exam ? applyExamMiss(runtime) : applyIncorrect(runtime))
   }
 
   const flushAdvance = () => {
@@ -203,10 +274,21 @@ export function SessionView({
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && previewGate) {
+        event.preventDefault()
+        setPreviewGate(false)
+        return
+      }
+
       if (event.key === 'Enter') {
+        if (previewGate) {
+          event.preventDefault()
+          confirmPreviewEnd()
+          return
+        }
         if (runtime.status === 'complete') {
           event.preventDefault()
-          navigate(-1)
+          leave()
           return
         }
         if (isPreview && !locked) {
@@ -234,6 +316,14 @@ export function SessionView({
 
       if (isTextInputFocused()) return
 
+      if (isPreview && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+        event.preventDefault()
+        if (previewGate && event.key === 'ArrowRight') return
+        if (event.key === 'ArrowLeft') onPreviewBack()
+        else onPreviewContinue()
+        return
+      }
+
       if (event.key === ' ' || event.code === 'Space') {
         if (!current || !currentCard) return
         const phrase = italianSpeechText(currentCard, {
@@ -258,39 +348,69 @@ export function SessionView({
     return () => window.removeEventListener('keydown', onKey)
   })
 
+  const unit = exam ? 'вопросов' : kind === 'exercise' ? 'заданий' : 'карточек'
+
   if (runtime.status === 'empty') {
     return (
       <Screen>
-        <SessionChrome title={title} progress="0 / 0" onExit={() => navigate(-1)} />
-        <div className="flex flex-1 items-center px-4 pb-[env(safe-area-inset-bottom)]">
+        <SessionChrome title={title} progress="0 / 0" unit={unit} onExit={leave} />
+        <div className="mx-auto flex w-full max-w-lg flex-1 items-center px-4 pb-[env(safe-area-inset-bottom)] lg:px-8">
           <EmptyState
-            title="Нечего повторять"
-            text="На сегодня карточек нет. Добавьте слова или грамматику — или откройте практику."
-            action={<Button onClick={() => navigate('/')}>К колодам</Button>}
+            title={exam ? 'Нечего спрашивать' : 'Нечего повторять'}
+            text={
+              exam
+                ? 'В выбранных колодах и упражнениях нет вопросов.'
+                : kind === 'exercise'
+                  ? 'В этом упражнении пока нет заданий.'
+                  : 'На сегодня слов нет. Новые появятся сразу после добавления.'
+            }
+            action={
+              <Button onClick={() => navigate(exam ? '/exam' : kind === 'exercise' ? '/exercises' : '/')}>
+                {exam ? 'К выбору' : kind === 'exercise' ? 'К упражнениям' : 'К колодам'}
+              </Button>
+            }
           />
         </div>
       </Screen>
     )
   }
 
+  if (runtime.status === 'complete' && exam) {
+    return <ExamComplete runtime={runtime} cardMap={cardMap} onDone={leave} />
+  }
+
   if (runtime.status === 'complete') {
     return (
       <Screen>
-        <SessionChrome title={title} progress={`${runtime.total} / ${runtime.total}`} onExit={() => navigate(-1)} />
-        <div className="flex flex-1 flex-col justify-center px-5 pb-[env(safe-area-inset-bottom)]">
-          <div className="animate-rise rounded-3xl border border-line bg-card px-6 py-10 text-center shadow-[var(--shadow)]">
+        <SessionChrome
+          title={title}
+          progress={`${runtime.total} / ${runtime.total}`}
+          unit={unit}
+          onExit={leave}
+        />
+        <div className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center px-5 pb-[env(safe-area-inset-bottom)] lg:px-8">
+          <div className="animate-rise rounded-3xl border border-line bg-card px-6 py-10 text-center shadow-[var(--shadow)] lg:px-10 lg:py-14">
             <div className="mx-auto mb-5 flex size-16 items-center justify-center rounded-full bg-success-soft text-success">
               <Check size={30} />
             </div>
             <h1 className="font-display text-3xl">Сессия завершена</h1>
             <p className="mt-3 text-sm leading-6 text-muted">
-              Батч из {runtime.total} {pluralCards(runtime.total)}
-              {practice ? ' в практике.' : '.'} За раз берём {BATCH_SIZE_MAX} карточек максимум.
-              {runtime.failedIds.length > 0
-                ? ` Ошибок: ${runtime.failedIds.length} — без повышения стадии, вернутся завтра.`
-                : ' Все прошли выбор и написание.'}
+              {kind === 'exercise' ? (
+                <>
+                  Пройдено {runtime.total} {pluralCards(runtime.total, kind)}. Расписание не меняется — упражнение
+                  можно открыть снова в любой момент.
+                  {runtime.failedIds.length > 0 ? ` Ошибок по ходу: ${runtime.failedIds.length}.` : ''}
+                </>
+              ) : (
+                <>
+                  Батч из {runtime.total} {pluralCards(runtime.total, kind)}. За раз берём {BATCH_SIZE_MAX} карточек максимум.
+                  {runtime.failedIds.length > 0
+                    ? ` Ошибок: ${runtime.failedIds.length} — без повышения стадии, вернутся завтра.`
+                    : ' Все прошли выбор и написание.'}
+                </>
+              )}
             </p>
-            <Button className="mt-8 w-full" onClick={() => navigate(-1)}>
+            <Button className="mt-8 w-full" onClick={leave}>
               Готово
             </Button>
           </div>
@@ -302,6 +422,7 @@ export function SessionView({
   if (!current || !currentCard) return null
 
   const done = runtime.completedIds.length
+  const examBar = exam ? examBarState(runtime) : null
   const answer = cardAnswer(currentCard)
   const testTier: 1 | 2 = current.tier === 2 ? 2 : 1
 
@@ -313,9 +434,18 @@ export function SessionView({
           progress={`${done} / ${runtime.total}`}
           ratio={runtime.total ? done / runtime.total : 0}
           phase={PHASE_LABEL.preview}
-          onExit={() => navigate(-1)}
+          unit="карточек"
+          onExit={leave}
         />
-        <PreviewCard card={currentCard} onContinue={onPreviewContinue} />
+        <PreviewCard
+          card={currentCard}
+          canGoBack={canPreviewBack}
+          onBack={onPreviewBack}
+          onContinue={onPreviewContinue}
+        />
+        {previewGate ? (
+          <PreviewEndGate onConfirm={confirmPreviewEnd} onCancel={() => setPreviewGate(false)} />
+        ) : null}
       </Screen>
     )
   }
@@ -324,70 +454,84 @@ export function SessionView({
     <Screen>
       <SessionChrome
         title={title}
-        progress={`${done} / ${runtime.total}`}
-        ratio={runtime.total ? done / runtime.total : 0}
-        phase={PHASE_LABEL[runtime.phase]}
-        onExit={() => navigate(-1)}
+        progress={examBar ? examBar.label : `${done} / ${runtime.total}`}
+        ratio={examBar ? examBar.ratio : runtime.total ? done / runtime.total : 0}
+        phase={exam ? (runtime.phase === 'spell' ? 'Экзамен · Написание' : 'Экзамен · Выбор') : phaseLabel(runtime.phase, runtime.hasPreview)}
+        unit={unit}
+        onExit={leave}
       />
 
-      <div className="flex flex-1 flex-col px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-2">
-        <div className="mb-6 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.16em] text-muted">
+      <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-2 lg:px-8 lg:pb-28">
+        <div className="mb-6 flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted">
           <span className="inline-flex items-center gap-1.5">
             {current.tier === 1 ? <Check size={14} /> : <PencilLine size={14} />}
             {current.tier === 1 ? 'Выбор' : 'Написание'}
           </span>
-          {practice ? <span className="rounded-full bg-surface px-2 py-1">Практика</span> : null}
+          <span className="hidden font-medium normal-case tracking-normal lg:inline">
+            {current.tier === 1 ? 'Клавиши 1–4' : 'Enter — проверить'} · пробел — звук
+          </span>
         </div>
 
-        <CardPrompt
-          card={currentCard}
-          tier={testTier}
-          value={spellValue}
-          status={spellStatus}
-          locked={locked}
-          revealed={answerRevealed}
-          onChange={setSpellValue}
-          onSubmit={onSpellSubmit}
-        />
-
-        {currentCard.notes ? (
-          <button
-            type="button"
-            onClick={() => setShowHint((value) => !value)}
-            className="mt-3 inline-flex items-center gap-1.5 self-start text-sm font-medium text-accent"
-          >
-            <Lightbulb size={16} />
-            {showHint ? currentCard.notes : 'Подсказка'}
-          </button>
-        ) : null}
-
-        <div className="mt-8 flex-1">
-          {current.tier === 1 ? (
-            <MultipleChoice
-              options={choices}
-              correct={answer}
-              disabled={locked}
-              selected={selected}
-              status={mcStatus}
-              onSelect={onMcSelect}
-            />
-          ) : currentCard.type === 'cloze' ? (
-            <Button className="w-full" disabled={locked || !spellValue.trim()} onClick={onSpellSubmit}>
-              Проверить
-            </Button>
-          ) : (
-            <SpellingInput
+        <div
+          className={clsx(
+            'flex flex-1 flex-col',
+            currentCard.type === 'cloze' && current.tier === 2
+              ? 'lg:mx-auto lg:w-full lg:max-w-3xl'
+              : 'lg:grid lg:grid-cols-2 lg:items-center lg:gap-x-16',
+          )}
+        >
+          <div>
+            <CardPrompt
+              card={currentCard}
+              tier={testTier}
               value={spellValue}
               status={spellStatus}
-              disabled={locked}
-              expected={answer}
-              onChange={(value) => {
-                setSpellValue(value)
-                if (spellStatus !== 'idle') setSpellStatus('idle')
-              }}
+              locked={locked}
+              revealed={answerRevealed}
+              onChange={setSpellValue}
               onSubmit={onSpellSubmit}
             />
-          )}
+
+            {currentCard.notes ? (
+              <button
+                type="button"
+                onClick={() => setShowHint((value) => !value)}
+                className="mt-3 inline-flex items-center gap-1.5 self-start text-sm font-medium text-accent"
+              >
+                <Lightbulb size={16} />
+                {showHint ? currentCard.notes : 'Подсказка'}
+              </button>
+            ) : null}
+          </div>
+
+          <div className={clsx('mt-8 flex-1', currentCard.type === 'cloze' && current.tier === 2 ? '' : 'lg:mt-0')}>
+            {current.tier === 1 ? (
+              <MultipleChoice
+                options={choices}
+                correct={answer}
+                disabled={locked}
+                selected={selected}
+                status={mcStatus}
+                onSelect={onMcSelect}
+              />
+            ) : currentCard.type === 'cloze' ? (
+              <Button className="w-full lg:max-w-sm" disabled={locked || !spellValue.trim()} onClick={onSpellSubmit}>
+                Проверить
+              </Button>
+            ) : (
+              <SpellingInput
+                value={spellValue}
+                status={spellStatus}
+                disabled={locked}
+                expected={answer}
+                onChange={(value) => {
+                  setSpellValue(value)
+                  if (spellStatus !== 'idle') setSpellStatus('idle')
+                }}
+                onSubmit={onSpellSubmit}
+              />
+            )}
+          </div>
         </div>
       </div>
 
@@ -403,26 +547,36 @@ export function SessionView({
   )
 }
 
-function PreviewCard({ card, onContinue }: { card: Card; onContinue: () => void }) {
+function PreviewCard({
+  card,
+  canGoBack,
+  onBack,
+  onContinue,
+}: {
+  card: Card
+  canGoBack: boolean
+  onBack: () => void
+  onContinue: () => void
+}) {
   const italian = (card.term || card.target || '').trim()
   const russian = (card.translation || '').trim()
   const hint = card.notes?.trim() || undefined
 
   return (
-    <div className="flex flex-1 flex-col px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-4">
+    <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-4 lg:justify-center lg:px-8 lg:pb-16">
       <p className="mb-6 inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-muted">
         <BookOpen size={14} />
         Слово
       </p>
 
       <div className="flex flex-1 flex-col justify-center">
-        <div className="animate-rise text-center">
+        <div key={card.id} className="animate-rise text-center">
           <div className="flex items-center justify-center gap-3">
-            <h1 className="font-display text-[2.75rem] leading-tight text-fg">{italian}</h1>
+            <h1 className="font-display text-[2.75rem] leading-tight text-fg lg:text-7xl">{italian}</h1>
             <SpeakButton text={italian} className="size-11 rounded-2xl bg-surface" />
           </div>
           {russian ? (
-            <p className="mt-5 font-display text-2xl leading-snug text-accent">{russian}</p>
+            <p className="mt-5 font-display text-2xl leading-snug text-accent lg:text-4xl">{russian}</p>
           ) : null}
           {hint ? (
             <p className="mx-auto mt-6 max-w-sm flex gap-2 text-left text-sm leading-6 text-muted">
@@ -433,9 +587,52 @@ function PreviewCard({ card, onContinue }: { card: Card; onContinue: () => void 
         </div>
       </div>
 
-      <Button className="mt-8 w-full" onClick={onContinue}>
-        Запомнил, дальше
-      </Button>
+      <div className="mt-8 flex items-center gap-3 lg:mx-auto lg:mt-12 lg:w-full lg:max-w-md">
+        <Button variant="secondary" className="shrink-0 px-3.5" disabled={!canGoBack} onClick={onBack}>
+          <ChevronLeft size={18} />
+          Назад
+        </Button>
+        <Button className="min-w-0 flex-1" onClick={onContinue}>
+          Запомнил, дальше
+          <ChevronRight size={18} />
+        </Button>
+      </div>
+      <p className="mt-3 text-center text-xs text-muted">← → · Enter — дальше · пробел — звук</p>
+    </div>
+  )
+}
+
+function PreviewEndGate({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 sm:items-center sm:p-6"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-lg"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="preview-end-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <Panel className="animate-rise rounded-b-none px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-5 sm:rounded-3xl sm:pb-6">
+          <h2 id="preview-end-title" className="font-display text-2xl">
+            Вы закончили ознакомление?
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-muted">
+            Дальше начнётся практика. Можно ещё раз пролистать слова.
+          </p>
+          <div className="mt-5 flex gap-3">
+            <Button variant="secondary" className="flex-1" onClick={onCancel}>
+              Нет
+            </Button>
+            <Button className="flex-1" onClick={onConfirm}>
+              Да
+            </Button>
+          </div>
+          <p className="mt-3 text-center text-xs text-muted">Enter — да · Esc — нет</p>
+        </Panel>
+      </div>
     </div>
   )
 }
@@ -481,7 +678,7 @@ function CardPrompt({
       <div>
         <p className="text-sm text-muted">{clozePromptLabel(card)}</p>
         <div className="mt-2 flex items-start gap-2">
-          <h1 className="min-w-0 flex-1 font-display text-[1.7rem] leading-snug">
+          <h1 className="min-w-0 flex-1 font-display text-[1.7rem] leading-snug lg:text-4xl">
             {before}
             {tier === 2 ? (
               <input
@@ -526,7 +723,7 @@ function CardPrompt({
       <div>
         <p className="text-sm text-muted">Преобразуйте</p>
         <div className="mt-1 flex items-start gap-2">
-          <h1 className="min-w-0 flex-1 font-display text-[2rem] leading-tight">{card.term}</h1>
+          <h1 className="min-w-0 flex-1 font-display text-[2rem] leading-tight lg:text-5xl">{card.term}</h1>
           {speech ? <SpeakButton text={speech} /> : null}
         </div>
       </div>
@@ -537,7 +734,7 @@ function CardPrompt({
     <div>
       <p className="text-sm text-muted">Как сказать</p>
       <div className="mt-1 flex items-start gap-2">
-        <h1 className="min-w-0 flex-1 font-display text-[2.1rem] leading-tight">{card.translation}</h1>
+        <h1 className="min-w-0 flex-1 font-display text-[2.1rem] leading-tight lg:text-5xl">{card.translation}</h1>
         {speech ? <SpeakButton text={speech} /> : null}
       </div>
     </div>
@@ -549,16 +746,19 @@ function SessionChrome({
   progress,
   ratio = 0,
   phase,
+  unit = 'карточек',
   onExit,
 }: {
   title: string
   progress: string
   ratio?: number
   phase?: string
+  unit?: string
   onExit: () => void
 }) {
   return (
-    <header className="sticky top-0 z-10 bg-bg/90 px-3 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur">
+    <header className="sticky top-0 z-10 bg-bg/90 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur lg:px-8">
+      <div className="mx-auto w-full max-w-5xl">
       <div className="flex items-center gap-2">
         <IconButton label="Выйти" onClick={onExit}>
           <X size={22} />
@@ -567,7 +767,7 @@ function SessionChrome({
           <p className="truncate text-sm font-semibold">{title}</p>
           <p className="text-xs text-muted">
             {phase ? `${phase} · ` : ''}
-            {progress} карточек
+            {progress} {unit}
           </p>
         </div>
         <SyncBadge />
@@ -578,14 +778,111 @@ function SessionChrome({
           style={{ width: `${Math.round(ratio * 100)}%` }}
         />
       </div>
+      </div>
     </header>
   )
 }
 
-function pluralCards(count: number): string {
+function pluralCards(count: number, kind: 'vocab' | 'exercise'): string {
   const mod10 = count % 10
   const mod100 = count % 100
-  if (mod10 === 1 && mod100 !== 11) return 'карточка'
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'карточки'
-  return 'карточек'
+  const forms =
+    kind === 'exercise'
+      ? (['задание', 'задания', 'заданий'] as const)
+      : (['карточка', 'карточки', 'карточек'] as const)
+  if (mod10 === 1 && mod100 !== 11) return forms[0]
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return forms[1]
+  return forms[2]
+}
+
+function examBarState(runtime: SessionRuntime): { label: string; ratio: number } {
+  if (runtime.phase === 'spell') {
+    const done = runtime.completedIds.length
+    return { label: `${done} / ${runtime.total}`, ratio: runtime.total ? done / runtime.total : 0 }
+  }
+  const mcTotal = runtime.batchIds.length - runtime.skipMcIds.length
+  const remaining = runtime.current ? runtime.queue.length + 1 : 0
+  const done = Math.max(0, mcTotal - remaining)
+  const total = Math.max(mcTotal, 1)
+  return { label: `${done} / ${mcTotal}`, ratio: done / total }
+}
+
+function ExamComplete({
+  runtime,
+  cardMap,
+  onDone,
+}: {
+  runtime: SessionRuntime
+  cardMap: Map<string, Card>
+  onDone: () => void
+}) {
+  const missed = runtime.failedIds
+    .map((id) => cardMap.get(id))
+    .filter((card): card is Card => Boolean(card))
+  const wrong = runtime.failedIds.length
+  const clean = Math.max(0, runtime.total - wrong)
+  const perfect = wrong === 0
+
+  return (
+    <Screen>
+      <SessionChrome title="Экзамен" progress={`${runtime.total} / ${runtime.total}`} ratio={1} unit="вопросов" onExit={onDone} />
+      <div
+        className={clsx(
+          'mx-auto flex w-full max-w-lg flex-1 flex-col overflow-y-auto px-5 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] lg:max-w-xl lg:px-8',
+          perfect && 'justify-center',
+        )}
+      >
+        <div className="animate-rise rounded-3xl border border-line bg-card px-6 py-8 text-center shadow-[var(--shadow)]">
+          <div
+            className={clsx(
+              'mx-auto mb-5 flex size-16 items-center justify-center rounded-full',
+              perfect ? 'bg-success-soft text-success' : 'bg-warn-soft text-warn',
+            )}
+          >
+            <Check size={30} />
+          </div>
+          <p className="font-display text-6xl leading-none">
+            {clean}
+            <span className="text-3xl text-muted">/{runtime.total}</span>
+          </p>
+          <h1 className="mt-3 font-display text-2xl">без ошибок</h1>
+          <p className="mt-3 text-sm leading-6 text-muted">
+            Вопрос засчитан, только если на каждом шаге ответ верный с первого раза. Расписание не меняется.
+          </p>
+          <Button className="mt-6 w-full" onClick={onDone}>
+            К выбору
+          </Button>
+        </div>
+
+        {missed.length > 0 ? (
+          <div className="mt-6">
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-[0.14em] text-muted">Где ошибся</h2>
+            <ul className="space-y-2">
+              {missed.map((card) => {
+                const row = examMissRow(card)
+                return (
+                  <li key={card.id} className="rounded-2xl border border-line bg-card px-4 py-3 text-left">
+                    <p className="text-sm leading-6 text-muted">{row.prompt}</p>
+                    <p className="mt-1 font-semibold">{row.answer}</p>
+                    {card.explanation ? <p className="mt-1 text-sm leading-6 text-muted">{card.explanation}</p> : null}
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        ) : null}
+      </div>
+    </Screen>
+  )
+}
+
+function examMissRow(card: Card): { prompt: string; answer: string } {
+  if (card.type === 'cloze') {
+    return {
+      prompt: (card.sentence ?? card.term).replace(/\{blank\}/gi, '_____'),
+      answer: card.target,
+    }
+  }
+  if (card.type === 'transform') return { prompt: card.term, answer: card.target }
+  return { prompt: card.translation || card.term, answer: card.target || card.term }
 }

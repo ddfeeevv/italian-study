@@ -14,8 +14,32 @@ export function isDue(card: Card, now = new Date()): boolean {
   return new Date(card.nextReviewDate).getTime() <= now.getTime()
 }
 
+/**
+ * First meeting only. A fresh vocab card is stage 0 and due at the moment it
+ * was created. After a pass (stage moves up) or a fail (review is pushed to
+ * the next day) the card comes back as a quiz, without showing the answer first.
+ */
+export function needsIntroduction(card: Card): boolean {
+  if (card.type !== 'vocab' || card.stage > 0) return false
+  const created = new Date(card.createdAt)
+  const due = new Date(card.nextReviewDate)
+  if (Number.isNaN(created.getTime()) || Number.isNaN(due.getTime())) return true
+  return (
+    startOfDay(due).getTime() === startOfDay(created).getTime() &&
+    due.getTime() - created.getTime() < 60_000
+  )
+}
+
 export function dueCards(cards: Card[], now = new Date()): Card[] {
   return cards.filter((card) => isDue(card, now))
+}
+
+export function vocabCards(cards: Card[]): Card[] {
+  return cards.filter((card) => card.type === 'vocab')
+}
+
+export function exerciseCards(cards: Card[]): Card[] {
+  return cards.filter((card) => card.type === 'cloze' || card.type === 'transform')
 }
 
 export function intervalDaysForStage(stage: Stage): number {

@@ -1,23 +1,40 @@
-import type { Card, Deck } from '../types/models'
+import type { Card, Deck, DeckKind } from '../types/models'
 import type { CardRow, DeckRow } from './supabase'
 
-export function mapDeck(row: DeckRow): Deck {
+/** Stored in `description` so exercise sets sync without a schema change. */
+const EXERCISE_MARK = '[[exercise]]\n'
+
+export function normalizeDeck(deck: Deck): Deck {
+  const raw = deck.description ?? ''
+  const marked = raw.startsWith(EXERCISE_MARK)
+  const kind: DeckKind = deck.kind === 'exercise' || marked ? 'exercise' : 'words'
   return {
+    ...deck,
+    kind,
+    description: marked ? raw.slice(EXERCISE_MARK.length) : raw,
+  }
+}
+
+export function mapDeck(row: DeckRow): Deck {
+  return normalizeDeck({
     id: row.id,
     userId: row.user_id,
     title: row.title,
     description: row.description ?? '',
     color: row.color ?? undefined,
     createdAt: row.created_at,
-  }
+  })
 }
 
 export function toDeckRow(deck: Deck): DeckRow {
+  const clean = deck.description.startsWith(EXERCISE_MARK)
+    ? deck.description.slice(EXERCISE_MARK.length)
+    : deck.description
   return {
     id: deck.id,
     user_id: deck.userId,
     title: deck.title,
-    description: deck.description,
+    description: deck.kind === 'exercise' ? EXERCISE_MARK + clean : clean,
     color: deck.color ?? null,
     created_at: deck.createdAt,
   }

@@ -1,3 +1,4 @@
+import { normalizeDeck } from './mappers'
 import type { AppData, Settings } from '../types/models'
 
 export const SETTINGS_KEY = 'parola:settings'
@@ -34,7 +35,7 @@ export function loadCache(userId: string): AppData | null {
     }
     return {
       version: 2,
-      decks: parsed.decks,
+      decks: parsed.decks.map((deck) => normalizeDeck(deck)),
       cards: parsed.cards,
       settings: loadSettings(),
     }
