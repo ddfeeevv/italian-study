@@ -26,6 +26,7 @@ import { productionProfile, subjectSpeech } from '../../lib/subjects'
 import { clsx } from '../../lib/utils'
 import { useAppStore } from '../../store/app-store'
 import type { Card } from '../../types/models'
+import { Mascot } from '../Mascot'
 import { SpeakButton } from '../SpeakButton'
 import { SyncBadge } from '../SyncBadge'
 import { Button, Card as Panel, EmptyState, IconButton, Screen } from '../ui'
@@ -396,6 +397,7 @@ export function SessionView({
         />
         <div className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center px-5 pb-[env(safe-area-inset-bottom)] lg:px-8">
           <div className="animate-rise rounded-3xl border border-line bg-card px-6 py-10 text-center shadow-[var(--shadow)] lg:px-10 lg:py-14">
+            <Mascot pose="done" className="mx-auto mb-4 h-24" />
             <div className="mx-auto mb-5 flex size-16 items-center justify-center rounded-full bg-success-soft text-success">
               <Check size={30} />
             </div>

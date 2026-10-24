@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { LanguageMenu } from '../components/LanguageSwitcher'
+import { Mascot } from '../components/Mascot'
 import { Button, Card, Field, Input, Screen } from '../components/ui'
 import { useI18n } from '../i18n/translate'
 import { supabaseConfigured } from '../lib/supabase'
@@ -45,7 +46,10 @@ export function AuthPage() {
             <h1 className="mt-6 max-w-md font-display text-5xl leading-tight">{t('auth.heroTitle')}</h1>
             <p className="mt-4 max-w-sm text-sm leading-6 text-muted">{t('auth.heroText')}</p>
           </div>
-          <p className="text-sm text-muted">{t('auth.intervals')}</p>
+          <div>
+            <Mascot pose="peek" className="h-28" />
+            <p className="mt-4 text-sm text-muted">{t('auth.intervals')}</p>
+          </div>
         </aside>
         <main className="flex flex-1 flex-col justify-center px-5 py-10 lg:px-16">
           <div className="mx-auto w-full max-w-md">

@@ -1,6 +1,7 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react'
 import { createPortal } from 'react-dom'
 import { clsx } from '../lib/utils'
+import { Mascot } from './Mascot'
 
 export function Screen({ children, className }: { children: ReactNode; className?: string }) {
   return (
@@ -181,6 +182,7 @@ export function EmptyState({
 }) {
   return (
     <Card className="mx-auto w-full max-w-lg px-6 py-10 text-center">
+      <Mascot pose="idle" className="mx-auto mb-4 h-20" />
       <h2 className="font-display text-2xl text-fg">{title}</h2>
       <p className="mt-2 text-sm leading-6 text-muted">{text}</p>
       {action ? <div className="mt-6">{action}</div> : null}
