@@ -142,6 +142,17 @@ textarea {
   animation: rise 0.4s ease both;
 }
 
+.mascot {
+  display: block;
+  width: 200px;
+  height: 200px;
+  max-width: none;
+  flex: none;
+  align-self: flex-start;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
 .thin-scrollbar {
   scrollbar-width: thin;
   scrollbar-color: var(--line) transparent;

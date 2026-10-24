@@ -58,7 +58,7 @@ export function AuthPage() {
       <div className="flex flex-1 flex-col lg:grid lg:grid-cols-2">
         <aside className="hidden flex-col justify-between border-r border-line bg-card px-12 py-10 lg:flex">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">Parola</p>
-          <Mascot className="h-40" />
+          <Mascot />
         </aside>
         <main className="flex flex-1 flex-col justify-center px-5 py-10 lg:px-16">
           <div className="mx-auto w-full max-w-md">

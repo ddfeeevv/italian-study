@@ -8,7 +8,9 @@ export function Mascot({ className }: { className?: string }) {
       alt=""
       aria-hidden="true"
       draggable={false}
-      className={clsx('w-auto shrink-0 select-none [image-rendering:pixelated]', className)}
+      width={200}
+      height={200}
+      className={clsx('mascot', className)}
     />
   )
 }
