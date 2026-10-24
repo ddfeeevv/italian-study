@@ -44,3 +44,5 @@ lavorare - работать
 Noi {blank} il treno | prendiamo | 1 лицо мн.ч. prendere
 la casa nuova (plurale) | le case nuove | la → le
 ```
+# Security update: Sat Oct 24 10:54:20 AM UTC 2026
+# Trigger rebuild after key rotation
