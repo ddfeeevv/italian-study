@@ -57,15 +57,8 @@ export function AuthPage() {
     <Screen>
       <div className="flex flex-1 flex-col lg:grid lg:grid-cols-2">
         <aside className="hidden flex-col justify-between border-r border-line bg-card px-12 py-10 lg:flex">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">Parola</p>
-            <h1 className="mt-6 max-w-md font-display text-5xl leading-tight">{t('auth.heroTitle')}</h1>
-            <p className="mt-4 max-w-sm text-sm leading-6 text-muted">{t('auth.heroText')}</p>
-          </div>
-          <div>
-            <Mascot pose="peek" className="h-28" />
-            <p className="mt-4 text-sm text-muted">{t('auth.intervals')}</p>
-          </div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">Parola</p>
+          <Mascot className="h-40" />
         </aside>
         <main className="flex flex-1 flex-col justify-center px-5 py-10 lg:px-16">
           <div className="mx-auto w-full max-w-md">
