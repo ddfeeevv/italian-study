@@ -526,6 +526,10 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   const updateDeck = useCallback(
     (deck: Deck) => {
+      remember({
+        ...dataRef.current,
+        decks: dataRef.current.decks.map((item) => (item.id === deck.id ? deck : item)),
+      })
       dispatch({ type: 'update-deck', deck })
       enqueue([{ kind: 'upsert-deck', id: deck.id }])
     },
@@ -534,6 +538,11 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   const deleteDeck = useCallback(
     (deckId: string) => {
+      remember({
+        ...dataRef.current,
+        decks: dataRef.current.decks.filter((deck) => deck.id !== deckId),
+        cards: dataRef.current.cards.filter((card) => card.deckId !== deckId),
+      })
       dispatch({ type: 'delete-deck', deckId })
       enqueue([{ kind: 'delete-deck', id: deckId }])
     },
@@ -542,6 +551,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   const addCards = useCallback(
     (cards: Card[]) => {
+      remember({ ...dataRef.current, cards: [...dataRef.current.cards, ...cards] })
       dispatch({ type: 'add-cards', cards })
       const deckIds = [...new Set(cards.map((card) => card.deckId))]
       enqueue([
@@ -554,6 +564,10 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   const updateCard = useCallback(
     (card: Card) => {
+      remember({
+        ...dataRef.current,
+        cards: dataRef.current.cards.map((item) => (item.id === card.id ? card : item)),
+      })
       dispatch({ type: 'update-card', card })
       enqueue([{ kind: 'upsert-card', id: card.id }])
     },
@@ -562,6 +576,10 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   const deleteCard = useCallback(
     (cardId: string) => {
+      remember({
+        ...dataRef.current,
+        cards: dataRef.current.cards.filter((card) => card.id !== cardId),
+      })
       dispatch({ type: 'delete-card', cardId })
       enqueue([{ kind: 'delete-card', id: cardId }])
     },
