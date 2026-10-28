@@ -23,6 +23,8 @@ npm run dev
 
 Схема: `supabase/migrations/20261013000000_init.sql`
 
+Друзья, имя и аватар: `supabase/migrations/20261028140000_social.sql` (после миграции стриков).
+
 В SQL Editor выполните миграцию, затем в Authentication:
 
 - Email: включить password + magic link

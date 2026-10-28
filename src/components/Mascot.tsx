@@ -1,15 +1,16 @@
 import { clsx } from '../lib/utils'
 import mascot from '../assets/mascot.svg'
 
-export function Mascot({ className }: { className?: string }) {
+export function Mascot({ className, size = 200 }: { className?: string; size?: number }) {
   return (
     <img
       src={mascot}
       alt=""
       aria-hidden="true"
       draggable={false}
-      width={200}
-      height={200}
+      width={size}
+      height={size}
+      style={{ width: size, height: size }}
       className={clsx('mascot', className)}
     />
   )

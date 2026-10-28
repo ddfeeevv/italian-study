@@ -2,6 +2,8 @@ import { Outlet } from 'react-router-dom'
 import { SyncBadge } from './SyncBadge'
 import { BottomNav, SideNav } from './BottomNav'
 import { LanguageMenu } from './LanguageSwitcher'
+import { MascotChat } from './MascotChat'
+import { StreakBadge } from './StreakCard'
 import { SubjectSwitcher } from './SubjectSwitcher'
 
 export function AppShell() {
@@ -14,11 +16,13 @@ export function AppShell() {
             <SubjectSwitcher />
           </div>
           <div className="flex shrink-0 items-center gap-1">
+            <StreakBadge />
             <LanguageMenu iconOnly />
             <SyncBadge compact />
           </div>
         </div>
         <Outlet />
+        <MascotChat />
       </div>
       <BottomNav />
     </div>

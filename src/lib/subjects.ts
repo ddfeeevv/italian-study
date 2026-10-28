@@ -333,12 +333,13 @@ export function subjectFromPreset(preset: LanguagePreset, userId: string): Subje
   }
 }
 
-export function topicSubject(title: string, userId: string): Subject {
+/** A language that is not one of the presets. No voice or accent keys. */
+export function customLanguage(title: string, userId: string): Subject {
   return {
     id: uid(),
     userId,
     title: title.trim(),
-    kind: 'topic',
+    kind: 'language',
     locale: null,
     accents: [],
     answerScript: 'any',

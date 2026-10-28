@@ -13,7 +13,7 @@ import { t } from '../i18n/translate'
 import { emptyData, loadCache, loadQueue, loadSettings, saveCache, saveQueue, saveSettings, type PendingOp } from '../lib/cache'
 import { mapCard, mapDeck, mapSubject, toCardRow, toDeckRow, toSubjectRow } from '../lib/mappers'
 import { dueCount, vocabCards } from '../lib/srs'
-import { cardsInSubject, prepareSubjects, subjectFromPreset, topicSubject, presetById } from '../lib/subjects'
+import { cardsInSubject, customLanguage, prepareSubjects, subjectFromPreset, presetById } from '../lib/subjects'
 import { supabase } from '../lib/supabase'
 import { debounce, nowIso, uid } from '../lib/utils'
 import type { AppData, Card, Deck, Settings, Subject, SyncStatus } from '../types/models'
@@ -93,7 +93,7 @@ type AppStore = {
   syncError: string | null
   ready: boolean
   addLanguage: (presetId: string) => Subject | null
-  addTopic: (title: string) => Subject | null
+  addCustomLanguage: (title: string) => Subject | null
   setActiveSubject: (subjectId: string) => void
   deleteSubject: (subjectId: string) => void
   addDeck: (input: { title: string; description: string; color?: string; kind?: Deck['kind'] }) => Deck | null
@@ -454,11 +454,11 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     [enqueue, user],
   )
 
-  const addTopic = useCallback(
+  const addCustomLanguage = useCallback(
     (title: string) => {
       const name = title.trim()
       if (!user || !name) return null
-      const subject = topicSubject(name, user.id)
+      const subject = customLanguage(name, user.id)
       remember({ ...dataRef.current, subjects: [...dataRef.current.subjects, subject] })
       dispatch({ type: 'add-subject', subject })
       setActive(subject.id)
@@ -620,7 +620,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       syncError,
       ready,
       addLanguage,
-      addTopic,
+      addCustomLanguage,
       setActiveSubject,
       deleteSubject,
       addDeck,
@@ -638,7 +638,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       addCards,
       addDeck,
       addLanguage,
-      addTopic,
+      addCustomLanguage,
       setActiveSubject,
       cardsByDeck,
       data,

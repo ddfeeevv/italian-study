@@ -1,5 +1,6 @@
 import { Play } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
+import { StreakCard } from '../components/StreakCard'
 import { Button, Card, EmptyState, List, Page } from '../components/ui'
 import { useI18n } from '../i18n/translate'
 import { dueCards, dueCount, vocabCards } from '../lib/srs'
@@ -19,6 +20,8 @@ export function ReviewPage() {
         <h1 className="font-display text-3xl lg:text-4xl">{t('review.title')}</h1>
         <p className="mt-2 text-sm leading-6 text-muted">{t('review.lead')}</p>
       </header>
+
+      <StreakCard />
 
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]">
         <Card className="px-5 py-6 lg:sticky lg:top-8">

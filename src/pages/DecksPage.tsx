@@ -1,6 +1,7 @@
 import { Plus } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { StreakCard } from '../components/StreakCard'
 import { Button, EmptyState, Field, IconButton, Input, List, Page, Sheet, Textarea } from '../components/ui'
 import { useI18n } from '../i18n/translate'
 import { dueCount, vocabCards } from '../lib/srs'
@@ -42,6 +43,8 @@ export function DecksPage() {
           </Button>
         </div>
       </header>
+
+      <StreakCard />
 
       {wordDecks.length === 0 ? (
         <EmptyState

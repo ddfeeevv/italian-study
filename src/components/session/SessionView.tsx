@@ -25,8 +25,10 @@ import { speechText, speak } from '../../lib/tts'
 import { productionProfile, subjectSpeech } from '../../lib/subjects'
 import { clsx } from '../../lib/utils'
 import { useAppStore } from '../../store/app-store'
+import { useStreak } from '../../store/streak-store'
 import type { Card } from '../../types/models'
 import { Mascot } from '../Mascot'
+import { StreakCompleteLine } from '../StreakCard'
 import { SpeakButton } from '../SpeakButton'
 import { SyncBadge } from '../SyncBadge'
 import { Button, Card as Panel, EmptyState, IconButton, Screen } from '../ui'
@@ -72,6 +74,7 @@ export function SessionView({
     else navigate(-1)
   }
   const { cards: allCards, decks, subjects, activeSubject, settings, updateCard } = useAppStore()
+  const { markStudied } = useStreak()
   const [runtime, setRuntime] = useState(() =>
     createSession(cards, exam ? { limit, skipPreview: true } : { takeAll: kind === 'exercise' }),
   )
@@ -239,6 +242,7 @@ export function SessionView({
   const onMcSelect = (option: string) => {
     if (!current || !currentCard || locked || current.tier !== 1) return
     setLocked(true)
+    markStudied(current.cardId)
     setSelected(option)
     const ok = option === cardAnswer(currentCard)
     setMcStatus(ok ? 'correct' : 'wrong')
@@ -258,6 +262,7 @@ export function SessionView({
       return
     }
     setLocked(true)
+    markStudied(current.cardId)
     if (result === 'exact') {
       navigator.vibrate?.(12)
       setSpellStatus('correct')
@@ -412,6 +417,7 @@ export function SessionView({
               <Check size={30} />
             </div>
             <h1 className="font-display text-3xl">{t('session.complete')}</h1>
+            <StreakCompleteLine />
             <p className="mt-3 text-sm leading-6 text-muted">
               {kind === 'exercise' ? (
                 <>
@@ -863,6 +869,7 @@ function ExamComplete({
             <span className="text-3xl text-muted">/{runtime.total}</span>
           </p>
           <h1 className="mt-3 font-display text-2xl">{t('session.perfect')}</h1>
+          <StreakCompleteLine />
           <p className="mt-3 text-sm leading-6 text-muted">{t('session.examRule')}</p>
           <Button className="mt-6 w-full" onClick={onDone}>
             {t('session.toSetup')}

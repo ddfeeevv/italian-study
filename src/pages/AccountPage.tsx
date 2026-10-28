@@ -1,16 +1,20 @@
 import { LogOut, Moon, Sun, Volume2 } from 'lucide-react'
 import { useRef, useState, type FormEvent } from 'react'
 import { Button, Card, Field, Input, Page } from '../components/ui'
+import { FriendsPanel } from '../components/FriendsPanel'
+import { ProfileCard } from '../components/ProfileCard'
 import { useI18n } from '../i18n/translate'
 import { masteredCount } from '../lib/srs'
 import { cardsInSubject } from '../lib/subjects'
 import { useAppStore } from '../store/app-store'
 import { useAuth } from '../store/auth-store'
+import { useSocial } from '../store/social-store'
 import type { ThemePreference } from '../types/models'
 
 export function AccountPage() {
   const { t } = useI18n()
   const { user, signOut } = useAuth()
+  const social = useSocial()
   const themes: Array<{ id: ThemePreference; label: string }> = [
     { id: 'light', label: t('account.themeLight') },
     { id: 'dark', label: t('account.themeDark') },
@@ -45,11 +49,28 @@ export function AccountPage() {
         ) : null}
       </header>
 
+      {!social.ready ? (
+        <p className="mb-4 text-sm text-muted">{t('common.loading')}</p>
+      ) : social.unavailable ? (
+        <Card className="mb-4 px-4 py-4 text-sm leading-6 text-muted">{t('social.unavailable')}</Card>
+      ) : social.profile ? (
+        <ProfileCard />
+      ) : social.error ? (
+        <Card className="mb-4 px-4 py-4">
+          <p role="alert" className="text-sm text-warn">{social.error}</p>
+          <Button className="mt-3" variant="secondary" onClick={() => void social.refresh()}>
+            {t('sync.retry')}
+          </Button>
+        </Card>
+      ) : null}
+
       <Card className="grid grid-cols-3 gap-3 px-4 py-5 text-center lg:px-8 lg:py-8">
         <Stat value={subjectCards.length} label={t('account.cards')} />
         <Stat value={masteredCount(subjectCards)} label={t('account.mastered')} />
         <Stat value={subjectCards.filter((card) => card.stage > 0).length} label={t('account.working')} />
       </Card>
+
+      {social.ready && social.profile ? <FriendsPanel /> : null}
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <Card className="flex h-full flex-col justify-center px-4 py-4">

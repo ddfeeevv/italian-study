@@ -10,12 +10,12 @@ import type { Subject } from '../types/models'
 
 export function SubjectSwitcher({ wide = false }: { wide?: boolean }) {
   const { t, studyTitle } = useI18n()
-  const { subjects, activeSubject, addLanguage, addTopic, setActiveSubject, deleteSubject } = useAppStore()
+  const { subjects, activeSubject, addLanguage, addCustomLanguage, setActiveSubject, deleteSubject } = useAppStore()
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const titleOf = (subject: Subject) => studyTitle(subject.presetId, subject.title)
   const [open, setOpen] = useState(false)
-  const [mode, setMode] = useState<'list' | 'language' | 'topic'>('list')
+  const [mode, setMode] = useState<'list' | 'language' | 'custom'>('list')
   const [title, setTitle] = useState('')
 
   const close = () => {
@@ -82,17 +82,17 @@ export function SubjectSwitcher({ wide = false }: { wide?: boolean }) {
                     />
                   </li>
                 ))}
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => setMode('language')}
+                    className="flex min-h-12 w-full items-center gap-2 rounded-2xl border border-line px-3 text-left text-muted transition hover:text-fg"
+                  >
+                    <Plus size={16} />
+                    <span className="font-semibold">{t('subject.add')}</span>
+                  </button>
+                </li>
               </ul>
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                <Button variant="secondary" onClick={() => setMode('language')}>
-                  <Plus size={16} />
-                  {t('subject.language')}
-                </Button>
-                <Button variant="secondary" onClick={() => setMode('topic')}>
-                  <Plus size={16} />
-                  {t('subject.topic')}
-                </Button>
-              </div>
             </>
           ) : null}
 
@@ -124,22 +124,29 @@ export function SubjectSwitcher({ wide = false }: { wide?: boolean }) {
                   )
                 })}
               </ul>
-              <Button variant="secondary" className="mt-4 w-full" onClick={() => setMode('list')}>
+              <button
+                type="button"
+                onClick={() => setMode('custom')}
+                className="mt-4 w-full text-center text-sm font-semibold text-muted transition hover:text-fg"
+              >
+                {t('subject.missing')}
+              </button>
+              <Button variant="secondary" className="mt-3 w-full" onClick={() => setMode('list')}>
                 {t('common.back')}
               </Button>
             </>
           ) : null}
 
-          {mode === 'topic' ? (
+          {mode === 'custom' ? (
             <>
-              <h2 className="font-display text-2xl">{t('subject.topicTitle')}</h2>
-              <p className="mt-2 text-sm leading-6 text-muted">{t('subject.topicLead')}</p>
+              <h2 className="font-display text-2xl">{t('subject.missingTitle')}</h2>
+              <p className="mt-2 text-sm leading-6 text-muted">{t('subject.missingLead')}</p>
               <form
                 className="mt-4"
                 onSubmit={(event) => {
                   event.preventDefault()
                   if (!title.trim()) return
-                  const created = addTopic(title)
+                  const created = addCustomLanguage(title)
                   close()
                   if (created) goHome()
                 }}
