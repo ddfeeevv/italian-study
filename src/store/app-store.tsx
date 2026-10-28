@@ -13,6 +13,7 @@ import { t } from '../i18n/translate'
 import { emptyData, loadCache, loadQueue, loadSettings, saveCache, saveQueue, saveSettings, type PendingOp } from '../lib/cache'
 import { mapCard, mapDeck, mapSubject, toCardRow, toDeckRow, toSubjectRow } from '../lib/mappers'
 import { dueCount, vocabCards } from '../lib/srs'
+import { needsOnboarding } from '../lib/onboarding'
 import { cardsInSubject, customLanguage, prepareSubjects, subjectFromPreset, presetById } from '../lib/subjects'
 import { supabase } from '../lib/supabase'
 import { debounce, nowIso, uid } from '../lib/utils'
@@ -104,6 +105,8 @@ type AppStore = {
   deleteCard: (cardId: string) => void
   setSettings: (settings: Partial<Settings>) => void
   retrySync: () => void
+  reload: () => Promise<void>
+  focusDeck: (deckId: string) => boolean
   cardsByDeck: (deckId: string) => Card[]
 }
 
@@ -119,6 +122,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const dataRef = useRef(data)
   const queueRef = useRef<PendingOp[]>([])
   const userRef = useRef(user?.id)
+  const needsTourRef = useRef(false)
+  needsTourRef.current = needsOnboarding(user)
   const flushingRef = useRef(false)
   const flushAgainRef = useRef(false)
   dataRef.current = data
@@ -156,7 +161,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       return
     }
     const cached = loadCache(user.id) ?? emptyData(loadSettings())
-    const packed = packStudy(cached, user.id)
+    const packed = packStudy(cached, user.id, !needsOnboarding(user) || cached.decks.length > 0)
     dataRef.current = packed.data
     dispatch({ type: 'replace', data: packed.data })
     const pending = loadQueue(user.id).filter((op) => ownsPending(packed.data, op))
@@ -398,15 +403,13 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   )
 
   const publishRemote = (userId: string, loaded: { subjects: Subject[] | null; decks: Deck[]; cards: Card[] }) => {
-    const packed = packStudy(
-      {
-        ...emptyData(loadSettings()),
-        subjects: loaded.subjects ?? dataRef.current.subjects,
-        decks: loaded.decks,
-        cards: loaded.cards,
-      },
-      userId,
-    )
+    const incoming = {
+      ...emptyData(loadSettings()),
+      subjects: loaded.subjects ?? dataRef.current.subjects,
+      decks: loaded.decks,
+      cards: loaded.cards,
+    }
+    const packed = packStudy(incoming, userId, !needsTourRef.current || incoming.decks.length > 0)
     dataRef.current = packed.data
     dispatch({ type: 'replace', data: packed.data })
     const ops = subjectsSchemaReady ? packed.ops : packed.ops.filter((op) => op.kind === 'delete-card')
@@ -599,6 +602,23 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     void hydrate(user.id)
   }, [hydrate, queueAllLocal, user])
 
+  const reload = useCallback(async () => {
+    if (!user) return
+    await hydrate(user.id)
+  }, [hydrate, user])
+
+  const focusDeck = useCallback((deckId: string) => {
+    const deck = dataRef.current.decks.find((item) => item.id === deckId)
+    if (!deck) return false
+    if (deck.subjectId && dataRef.current.subjects.some((subject) => subject.id === deck.subjectId)) {
+      const settings = { ...dataRef.current.settings, activeSubjectId: deck.subjectId }
+      dataRef.current = { ...dataRef.current, settings }
+      dispatch({ type: 'set-settings', settings: { activeSubjectId: deck.subjectId } })
+      saveSettings(settings)
+    }
+    return true
+  }, [])
+
   const cardsByDeck = useCallback(
     (deckId: string) => data.cards.filter((card) => card.deckId === deckId),
     [data.cards],
@@ -631,6 +651,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       deleteCard,
       setSettings,
       retrySync,
+      reload,
+      focusDeck,
       cardsByDeck,
     }),
     [
@@ -646,6 +668,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       deleteDeck,
       deleteSubject,
       ready,
+      focusDeck,
+      reload,
       retrySync,
       setSettings,
       syncError,
@@ -698,14 +722,16 @@ function ownsPending(data: AppData, op: PendingOp): boolean {
   return true
 }
 
-function packStudy(data: AppData, userId: string): { data: AppData; ops: PendingOp[] } {
-  const prepared = prepareSubjects(userId, data.subjects ?? [], data.decks, data.settings)
+function packStudy(data: AppData, userId: string, seedDefault = true): { data: AppData; ops: PendingOp[] } {
+  const prepared = prepareSubjects(userId, data.subjects ?? [], data.decks, data.settings, seedDefault)
   const next: AppData = {
     version: 3,
     subjects: prepared.subjects,
     decks: prepared.decks,
     cards: data.cards,
-    settings: { ...data.settings, activeSubjectId: prepared.activeSubjectId },
+    settings: prepared.activeSubjectId
+      ? { ...data.settings, activeSubjectId: prepared.activeSubjectId }
+      : { ...data.settings, activeSubjectId: undefined },
   }
   const ops: PendingOp[] = [
     ...prepared.subjectUpserts.map((id) => ({ kind: 'upsert-subject' as const, id })),

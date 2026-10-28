@@ -17,22 +17,30 @@ const FILLER = new Set([
   'создай', 'сделай', 'собери', 'сгенерируй', 'добавь', 'хочу', 'давай', 'можно', 'можешь', 'пожалуйста', 'мне',
   'ещё', 'еще', 'колоду', 'колода', 'колоды', 'набор', 'карточек', 'карточки', 'карточка', 'карточку', 'слов',
   'слова', 'слово', 'про', 'на', 'тему', 'тема', 'теме', 'темы', 'штук', 'штуки', 'штука',
+  'задание', 'задания', 'заданий', 'упражнение', 'упражнения', 'упражнений', 'вправу', 'вправи', 'вправ',
   'створи', 'зроби', 'слів', 'будь', 'ласка',
   'create', 'generate', 'make', 'add', 'please', 'deck', 'decks', 'card', 'cards', 'word', 'words', 'about',
-  'topic', 'the', 'a', 'an', 'me', 'some',
+  'topic', 'the', 'a', 'an', 'me', 'some', 'task', 'tasks', 'exercise', 'exercises',
   'crea', 'crear', 'genera', 'generar', 'palabras', 'palabra', 'sobre', 'mazo', 'tarjetas', 'tarjeta',
+  'ejercicio', 'ejercicios', 'tarea', 'tareas',
   'erstelle', 'mach', 'bitte', 'wörter', 'worte', 'wort', 'über', 'thema', 'karten', 'karte', 'stapel',
+  'übung', 'übungen', 'aufgabe', 'aufgaben',
   'crée', 'creer', 'créer', 'mots', 'mot', 'sur', 'paquet', 'cartes', 'carte', 'un', 'une',
-  'palavras', 'cartões', 'cartão', 'baralho',
-  'creare', 'parole', 'parola', 'mazzo', 'carte', 'carta',
-  'utwórz', 'słowa', 'słów', 'słowo', 'temat', 'talia', 'fiszek', 'fiszki',
-  'oluştur', 'kelime', 'kelimeler', 'hakkında', 'deste', 'kart',
+  'exercice', 'exercices',
+  'palavras', 'cartões', 'cartão', 'baralho', 'exercício', 'exercícios', 'tarefa', 'tarefas',
+  'creare', 'parole', 'parola', 'mazzo', 'carte', 'carta', 'esercizio', 'esercizi',
+  'utwórz', 'słowa', 'słów', 'słowo', 'temat', 'talia', 'fiszek', 'fiszki', 'ćwiczenie', 'ćwiczenia', 'zadanie', 'zadania', 'zadań',
+  'oluştur', 'kelime', 'kelimeler', 'hakkında', 'deste', 'kart', 'alıştırma', 'alıştırmalar',
 ])
 
 const COUNT_SUFFIX = new Set([
   'слов', 'слова', 'слово', 'слів', 'words', 'word', 'mots', 'mot', 'wörter', 'wort', 'worte', 'palabras',
   'palabra', 'palavras', 'palavra', 'parole', 'parola', 'kelime', 'słowa', 'słów', 'słowo', '个', '個', '词', '語',
   '회', '개',
+  'задание', 'задания', 'заданий', 'упражнение', 'упражнения', 'упражнений', 'вправу', 'вправи', 'вправ',
+  'task', 'tasks', 'exercise', 'exercises', 'ejercicio', 'ejercicios', 'tarea', 'tareas',
+  'übung', 'übungen', 'aufgabe', 'aufgaben', 'exercice', 'exercices', 'exercício', 'exercícios',
+  'esercizio', 'esercizi', 'ćwiczenie', 'ćwiczenia', 'zadanie', 'zadania', 'zadań', 'alıştırma', 'alıştırmalar',
 ])
 
 export function nextTurn(draft: TutorDraft, text: string, maxCount = MAX_WORDS_PER_REQUEST): TutorTurn {

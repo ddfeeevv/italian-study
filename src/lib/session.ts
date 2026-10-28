@@ -173,6 +173,7 @@ export function applyCorrect(runtime: SessionRuntime): SessionRuntime {
   return nextQuestion(runtime, runtime.queue, { completedIds })
 }
 
+/** Miss: ask again later in this phase. No attempt cap — the learner stops with `applyMoveOn`. */
 export function applyIncorrect(runtime: SessionRuntime): SessionRuntime {
   if (!runtime.current) return runtime
   const { cardId, tier } = runtime.current
@@ -182,9 +183,6 @@ export function applyIncorrect(runtime: SessionRuntime): SessionRuntime {
   const failedIds = runtime.failedIds.includes(cardId)
     ? runtime.failedIds
     : [...runtime.failedIds, cardId]
-  if (currentAttempts >= 3) {
-    return nextQuestion(runtime, runtime.queue, { failedIds })
-  }
   const queue = insertLater(
     runtime.queue,
     { cardId, tier, attempts: currentAttempts },
@@ -192,6 +190,23 @@ export function applyIncorrect(runtime: SessionRuntime): SessionRuntime {
     RETRY_GAP_MAX,
   )
   return nextQuestion(runtime, queue, { failedIds })
+}
+
+/** Miss, and the learner does not want this card again in the session. */
+export function applyMoveOn(runtime: SessionRuntime): SessionRuntime {
+  if (!runtime.current) return runtime
+  const { cardId, tier } = runtime.current
+  if (tier === 0) return applyPreviewDone(runtime)
+
+  const failedIds = runtime.failedIds.includes(cardId)
+    ? runtime.failedIds
+    : [...runtime.failedIds, cardId]
+  if (tier === 1) return nextQuestion(runtime, runtime.queue, { failedIds })
+
+  const completedIds = runtime.completedIds.includes(cardId)
+    ? runtime.completedIds
+    : [...runtime.completedIds, cardId]
+  return nextQuestion(runtime, runtime.queue, { failedIds, completedIds })
 }
 
 export function shouldAdvance(runtime: SessionRuntime, cardId: string): boolean {

@@ -53,8 +53,66 @@ export type ProfileRow = {
   username: string
   avatar: string
   customized: boolean
+  role: 'student' | 'teacher'
   created_at: string
   updated_at: string
+}
+
+export type ClassroomCodeRow = {
+  id: string
+  code: string
+}
+
+export type ClassPreviewRow = {
+  username: string
+  avatar: string
+  already: boolean
+}
+
+export type JoinClassRow = {
+  classroom_id: string
+  username: string
+  already: boolean
+}
+
+export type MyClassRow = {
+  classroom_id: string
+  username: string
+  avatar: string
+}
+
+export type ShareCodeRow = {
+  code: string
+}
+
+export type SharePreviewRow = {
+  title: string
+  kind: string
+  cards: number
+  teacher_username: string
+  teacher_avatar: string
+  own: boolean
+  already: boolean
+  deck_id: string | null
+}
+
+export type RedeemShareRow = {
+  deck_id: string
+  kind: string
+  already: boolean
+}
+
+export type ClassBoardRow = {
+  student_id: string
+  username: string
+  avatar: string
+  joined_at: string
+  cards: number
+  mastered: number
+  working: number
+  streak: number
+  studied_today: boolean
+  decks: unknown
 }
 
 export type FriendshipRow = {
@@ -154,6 +212,46 @@ export type Database = {
       friend_progress: {
         Args: { today: string }
         Returns: FriendProgressRow[]
+      }
+      ensure_classroom: {
+        Args: Record<string, never>
+        Returns: ClassroomCodeRow[]
+      }
+      preview_class: {
+        Args: { join_code: string }
+        Returns: ClassPreviewRow[]
+      }
+      join_classroom: {
+        Args: { join_code: string }
+        Returns: JoinClassRow[]
+      }
+      my_classes: {
+        Args: Record<string, never>
+        Returns: MyClassRow[]
+      }
+      leave_class: {
+        Args: { class_id: string }
+        Returns: undefined
+      }
+      dismiss_student: {
+        Args: { student: string }
+        Returns: undefined
+      }
+      share_deck: {
+        Args: { deck: string }
+        Returns: ShareCodeRow[]
+      }
+      preview_share: {
+        Args: { share_code: string }
+        Returns: SharePreviewRow[]
+      }
+      redeem_share: {
+        Args: { share_code: string }
+        Returns: RedeemShareRow[]
+      }
+      class_board: {
+        Args: { today: string }
+        Returns: ClassBoardRow[]
       }
     }
     Enums: {

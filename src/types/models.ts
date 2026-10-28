@@ -55,10 +55,14 @@ export type Card = {
 
 export type ThemePreference = 'light' | 'dark' | 'system'
 
+/** Days between successful reviews. One to five steps. The last step repeats once the word is learned. */
+export type IntervalSchedule = number[]
+
 export type Settings = {
   theme: ThemePreference
   autoPlayAudio: boolean
   activeSubjectId?: string
+  intervals: IntervalSchedule
 }
 
 export type AppData = {

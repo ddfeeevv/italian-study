@@ -1,6 +1,6 @@
 import type { QuotaSnapshot } from './generation-quota'
 import { supabase } from './supabase'
-import type { SubjectKind } from '../types/models'
+import type { CardType, SubjectKind } from '../types/models'
 
 export class TutorApiError extends Error {
   readonly code: string
@@ -18,6 +18,7 @@ export type TutorDeckRequest = {
   topic: string
   count: number
   glossLocale: string
+  kind: 'words' | 'exercise'
   subject: {
     kind: SubjectKind
     title: string
@@ -28,8 +29,12 @@ export type TutorDeckRequest = {
 }
 
 export type GeneratedCard = {
+  type: CardType
   term: string
   translation: string
+  sentence?: string
+  target: string
+  explanation?: string
 }
 
 export type GeneratedDeck = {
@@ -108,11 +113,35 @@ function parseDeck(payload: Record<string, unknown>, fallbackTitle: string): Gen
   if (Array.isArray(payload.cards)) {
     for (const item of payload.cards) {
       if (!item || typeof item !== 'object') continue
-      const card = item as { term?: unknown; translation?: unknown }
-      const term = typeof card.term === 'string' ? card.term.trim() : ''
-      const translation = typeof card.translation === 'string' ? card.translation.trim() : ''
+      const card = item as {
+        type?: unknown
+        term?: unknown
+        translation?: unknown
+        sentence?: unknown
+        target?: unknown
+        explanation?: unknown
+      }
+      const text = (value: unknown) => (typeof value === 'string' ? value.trim() : '')
+      const type = card.type === 'cloze' || card.type === 'transform' ? card.type : 'vocab'
+      const explanation = text(card.explanation) || undefined
+      if (type === 'cloze') {
+        const sentence = text(card.sentence)
+        const target = text(card.target)
+        if (!sentence.includes('{blank}') || !target) continue
+        cards.push({ type, term: text(card.term), translation: text(card.translation), sentence, target, explanation })
+        continue
+      }
+      if (type === 'transform') {
+        const term = text(card.term)
+        const target = text(card.target)
+        if (!term || !target) continue
+        cards.push({ type, term, translation: '', target, explanation })
+        continue
+      }
+      const term = text(card.term)
+      const translation = text(card.translation)
       if (!term || !translation) continue
-      cards.push({ term, translation })
+      cards.push({ type: 'vocab', term, translation, target: term })
     }
   }
   if (cards.length < 1) throw new TutorApiError('failed', quota)

@@ -16,8 +16,8 @@ type AuthStore = {
   user: User | null
   loading: boolean
   signIn: (email: string, password: string) => Promise<string | null>
-  signUp: (email: string, password: string) => Promise<string | null>
-  signInMagic: (email: string) => Promise<string | null>
+  signUp: (email: string, password: string, role: 'student' | 'teacher') => Promise<string | null>
+  signInMagic: (email: string, role: 'student' | 'teacher') => Promise<string | null>
   changeEmail: (currentPassword: string, nextEmail: string) => Promise<string | null>
   changePassword: (currentPassword: string, nextPassword: string) => Promise<string | null>
   signOut: () => Promise<void>
@@ -49,18 +49,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { error } = await supabase.auth.signInWithPassword({ email, password })
         return error?.message ?? null
       },
-      signUp: async (email, password) => {
+      signUp: async (email, password, role) => {
         const { error } = await supabase.auth.signUp({
           email,
           password,
-          options: { emailRedirectTo: authRedirectTo() },
+          options: {
+            emailRedirectTo: authRedirectTo(),
+            data: { needs_onboarding: true, account_role: role },
+          },
         })
         return error?.message ?? null
       },
-      signInMagic: async (email) => {
+      signInMagic: async (email, role) => {
         const { error } = await supabase.auth.signInWithOtp({
           email,
-          options: { emailRedirectTo: authRedirectTo() },
+          options: {
+            emailRedirectTo: authRedirectTo(),
+            data: { account_role: role },
+          },
         })
         return error?.message ?? null
       },

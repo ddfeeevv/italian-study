@@ -1,10 +1,17 @@
-import { LogOut, Moon, Sun, Volume2 } from 'lucide-react'
+import { LogOut, Moon, Plus, Sun, Volume2, X } from 'lucide-react'
 import { useRef, useState, type FormEvent } from 'react'
 import { Button, Card, Field, Input, Page } from '../components/ui'
 import { FriendsPanel } from '../components/FriendsPanel'
+import { ClassPanel } from '../components/ClassPanel'
 import { ProfileCard } from '../components/ProfileCard'
 import { useI18n } from '../i18n/translate'
-import { masteredCount } from '../lib/srs'
+import {
+  DEFAULT_INTERVALS,
+  MAX_INTERVAL_STEPS,
+  masteredCount,
+  normalizeIntervals,
+  suggestIntervalStep,
+} from '../lib/srs'
 import { cardsInSubject } from '../lib/subjects'
 import { useAppStore } from '../store/app-store'
 import { useAuth } from '../store/auth-store'
@@ -42,6 +49,11 @@ export function AccountPage() {
       <header className="mb-6 pt-2">
         <h1 className="font-display text-3xl lg:text-4xl">{t('account.title')}</h1>
         <p className="mt-2 truncate text-sm text-muted">{user?.email}</p>
+        {social.profile ? (
+          <p className="mt-1 text-sm font-medium text-accent">
+            {social.profile.role === 'teacher' ? t('account.roleTeacher') : t('account.roleStudent')}
+          </p>
+        ) : null}
         {user?.new_email ? (
           <p className="mt-2 text-sm leading-6 text-muted">
             {t('account.pendingEmail', { email: user.new_email })}
@@ -69,6 +81,8 @@ export function AccountPage() {
         <Stat value={masteredCount(subjectCards)} label={t('account.mastered')} />
         <Stat value={subjectCards.filter((card) => card.stage > 0).length} label={t('account.working')} />
       </Card>
+
+      {social.ready && social.profile?.role === 'student' ? <ClassPanel /> : null}
 
       {social.ready && social.profile ? <FriendsPanel /> : null}
 
@@ -128,6 +142,8 @@ export function AccountPage() {
         </Card>
       </div>
 
+      <IntervalScheduleCard />
+
       <div className="mt-8 grid items-start gap-4 border-t border-line pt-8 lg:grid-cols-2">
         <EmailChangeForm email={user?.email ?? ''} locked={securityBusy} onBusy={setSecurityLock} />
         <PasswordChangeForm email={user?.email ?? ''} locked={securityBusy} onBusy={setSecurityLock} />
@@ -145,6 +161,78 @@ export function AccountPage() {
         </a>
       </p>
     </Page>
+  )
+}
+
+function sameSchedule(left: number[], right: number[]): boolean {
+  return left.length === right.length && left.every((day, index) => day === right[index])
+}
+
+function IntervalScheduleCard() {
+  const { t, plural } = useI18n()
+  const { settings, setSettings } = useAppStore()
+  const saved = normalizeIntervals(settings.intervals)
+  const [draft, setDraft] = useState<string[] | null>(null)
+  const values = draft ?? saved.map(String)
+  const dirty = !sameSchedule(saved, DEFAULT_INTERVALS)
+
+  const write = (next: number[]) => {
+    setDraft(null)
+    setSettings({ intervals: normalizeIntervals(next) })
+  }
+
+  return (
+    <Card className="mt-4 px-4 py-4 lg:px-5">
+      <p className="text-sm font-semibold">{t('intervals.title')}</p>
+      <p className="mt-1 text-sm leading-6 text-muted">{t('intervals.lead')}</p>
+      <ol className="mt-4 space-y-2">
+        {values.map((value, index) => (
+          <li key={index} className="flex items-center gap-2">
+            <input
+              inputMode="numeric"
+              aria-label={t('intervals.step', { n: index + 1 })}
+              value={value}
+              onChange={(event) => {
+                const raw = event.target.value.replace(/[^\d]/g, '').slice(0, 3)
+                const next = [...values]
+                next[index] = raw
+                setDraft(next)
+              }}
+              onBlur={() => write(values.map((item) => Number(item)))}
+              className="h-11 w-16 rounded-xl border border-line bg-card text-center text-sm tabular-nums text-fg outline-none focus:border-accent"
+            />
+            <span className="text-sm text-muted">{plural('days', Number(value) || 0)}</span>
+            <button
+              type="button"
+              aria-label={t('intervals.remove')}
+              disabled={values.length <= 1}
+              onClick={() => write(values.filter((_, item) => item !== index).map((item) => Number(item)))}
+              className="ml-auto inline-flex size-11 items-center justify-center rounded-xl text-muted hover:bg-surface hover:text-fg disabled:opacity-30"
+            >
+              <X size={16} />
+            </button>
+          </li>
+        ))}
+      </ol>
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+        {values.length < MAX_INTERVAL_STEPS ? (
+          <button
+            type="button"
+            onClick={() => write([...values.map((item) => Number(item)), suggestIntervalStep(values.map(Number))])}
+            className="inline-flex items-center gap-1 text-sm font-semibold text-accent"
+          >
+            <Plus size={16} />
+            {t('intervals.add')}
+          </button>
+        ) : null}
+        {dirty ? (
+          <button type="button" className="text-sm text-muted" onClick={() => write([...DEFAULT_INTERVALS])}>
+            {t('intervals.reset')}
+          </button>
+        ) : null}
+      </div>
+      <p className="mt-4 text-sm leading-6 text-muted">{t('intervals.why')}</p>
+    </Card>
   )
 }
 

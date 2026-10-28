@@ -2,6 +2,7 @@ import { ListPlus, Pencil, PenLine, Play, Plus } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Button, EmptyState, Field, IconButton, Input, List, Page, Sheet, Textarea } from '../components/ui'
+import { ShareDeckButton } from '../components/ShareDeckButton'
 import { linesToCards, parseExerciseText, sanitizeUserInput } from '../lib/import-export'
 import { createCard, exerciseCards } from '../lib/srs'
 import { useAppStore } from '../store/app-store'
@@ -75,10 +76,13 @@ export function ExerciseDetailPage() {
             </p>
           ) : null}
 
-          <Button className="mb-6 w-full" disabled={tasks.length === 0} onClick={() => navigate(`/drill/${deck.id}`)}>
-            <Play size={16} />
-            {t('exercise.go')}
-          </Button>
+          <div className="mb-6 space-y-2">
+            <Button className="w-full" disabled={tasks.length === 0} onClick={() => navigate(`/drill/${deck.id}`)}>
+              <Play size={16} />
+              {t('exercise.go')}
+            </Button>
+            <ShareDeckButton deckId={deck.id} />
+          </div>
 
           {legacy ? null : (
             <button type="button" className="hidden text-sm text-danger lg:inline" onClick={removeExercise}>

@@ -1,7 +1,7 @@
 import { Send, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { useI18n } from '../i18n/translate'
 import { MAX_WORDS_PER_REQUEST, requestsLeft, wordsLeft, type QuotaSnapshot } from '../lib/generation-quota'
 import { nextTurn, type TutorDraft } from '../lib/mascot-intent'
@@ -21,6 +21,7 @@ type Bubble = {
   role: 'mascot' | 'user'
   text: string
   deckId?: string
+  exercise?: boolean
   preview?: string
   pending?: boolean
 }
@@ -32,6 +33,8 @@ type QuotaState =
   | { status: 'error' }
 
 export function MascotChat() {
+  const { pathname } = useLocation()
+  const exercise = pathname.startsWith('/exercises')
   const { t, countInline, locale } = useI18n()
   const { user } = useAuth()
   const { ready, cards, decks, activeSubject, addDeck, addCards } = useAppStore()
@@ -74,7 +77,7 @@ export function MascotChat() {
     void loadQuota()
   }, [loadQuota, open])
 
-  const greeting = t('tutor.greeting')
+  const greeting = t(exercise ? 'tutor.greetingExercise' : 'tutor.greeting')
   const lead = bubbles[0]
   if (lead && bubbles.length === 1 && lead.role === 'mascot' && !lead.deckId && !lead.pending && lead.text !== greeting) {
     setBubbles([{ ...lead, text: greeting }])
@@ -139,10 +142,10 @@ export function MascotChat() {
         turn.ask === 'topic'
           ? t('tutor.needTopic')
           : turn.ask === 'count'
-            ? t('tutor.needCount', { max: cap })
+            ? t(exercise ? 'tutor.needCountExercise' : 'tutor.needCount', { max: cap })
             : turn.ask === 'tooMany'
-              ? t('tutor.tooMany', { max: cap })
-              : t('tutor.exampleAsk')
+              ? t(exercise ? 'tutor.tooManyExercise' : 'tutor.tooMany', { max: cap })
+              : t(exercise ? 'tutor.exampleAskExercise' : 'tutor.exampleAsk')
       setBubbles((current) => [...current, { id: uid(), role: 'mascot', text: reply }])
       return
     }
@@ -161,7 +164,7 @@ export function MascotChat() {
     setBusy(true)
     setBubbles((current) => [
       ...current,
-      { id: pendingId, role: 'mascot', text: t('tutor.working'), pending: true },
+      { id: pendingId, role: 'mascot', text: t(exercise ? 'tutor.workingExercise' : 'tutor.working'), pending: true },
     ])
     try {
       const result = await requestTutorDeck({
@@ -174,13 +177,15 @@ export function MascotChat() {
           locale: activeSubject.locale,
           presetId: activeSubject.presetId,
         },
-        avoid: avoidTerms(cards, decks, activeSubject.id),
+        kind: exercise ? 'exercise' : 'words',
+        avoid: avoidTerms(cards, decks, activeSubject.id, exercise),
       })
       applyQuota(result.quota)
       const deck = addDeck({
         title: result.title,
         description: text.slice(0, 140),
         color: COLORS[decks.length % COLORS.length],
+        kind: exercise ? 'exercise' : 'words',
       })
       if (!deck) throw new TutorApiError('failed', result.quota)
       addCards(
@@ -188,25 +193,38 @@ export function MascotChat() {
           createCard({
             deckId: deck.id,
             userId: user.id,
-            term: card.term,
+            type: card.type,
+            term: card.term || card.target,
             translation: card.translation,
-            target: card.term,
+            sentence: card.sentence,
+            target: card.target,
+            explanation: card.explanation,
           }),
         ),
       )
-      const key = result.limited ? 'tutor.doneShort' : 'tutor.done'
+      const key = result.limited
+        ? exercise
+          ? 'tutor.doneShortExercise'
+          : 'tutor.doneShort'
+        : exercise
+          ? 'tutor.doneExercise'
+          : 'tutor.done'
       setBubbles((current) =>
         current.map((item) =>
           item.id === pendingId
             ? {
                 id: pendingId,
                 role: 'mascot',
-                text: t(key, { count: countInline('words', result.cards.length), title: result.title }),
+                text: t(key, {
+                  count: countInline(exercise ? 'tasks' : 'words', result.cards.length),
+                  title: result.title,
+                }),
                 deckId: deck.id,
+                exercise,
                 preview: result.cards
-                  .slice(0, 4)
-                  .map((card) => card.term)
-                  .join(', '),
+                  .slice(0, 3)
+                  .map((card) => (card.sentence ? card.sentence.replaceAll('{blank}', '___') : card.term))
+                  .join(' · '),
               }
             : item,
         ),
@@ -225,7 +243,7 @@ export function MascotChat() {
               ? t('tutor.unauthorized')
               : code === 'quota_unavailable'
                 ? t('tutor.quotaDown')
-                : t('tutor.failed')
+                : t(exercise ? 'tutor.failedExercise' : 'tutor.failed')
       setBubbles((current) =>
         current.map((item) => (item.id === pendingId ? { id: pendingId, role: 'mascot', text: reply } : item)),
       )
@@ -235,7 +253,7 @@ export function MascotChat() {
     }
   }
 
-  const status = quotaLabel(quotaState, blocked, t, countInline)
+  const status = quotaLabel(quotaState, blocked, exercise, t, countInline)
 
   return createPortal(
     <>
@@ -276,8 +294,12 @@ export function MascotChat() {
                   <p>{item.text}</p>
                   {item.preview ? <p className="mt-1 text-xs leading-5 text-muted">{item.preview}</p> : null}
                   {item.deckId ? (
-                    <Link to={`/decks/${item.deckId}`} onClick={close} className="mt-2 inline-flex font-semibold text-accent">
-                      {t('tutor.openDeck')}
+                    <Link
+                      to={item.exercise ? `/exercises/${item.deckId}` : `/decks/${item.deckId}`}
+                      onClick={close}
+                      className="mt-2 inline-flex font-semibold text-accent"
+                    >
+                      {t(item.exercise ? 'tutor.openExercise' : 'tutor.openDeck')}
                     </Link>
                   ) : null}
                 </div>
@@ -286,10 +308,10 @@ export function MascotChat() {
             {showHint ? (
               <button
                 type="button"
-                onClick={() => void send(t('tutor.chip'))}
+                onClick={() => void send(t(exercise ? 'tutor.chipExercise' : 'tutor.chip'))}
                 className="rounded-full border border-line bg-card px-3 py-1.5 text-left text-sm text-fg hover:bg-surface"
               >
-                {t('tutor.chip')}
+                {t(exercise ? 'tutor.chipExercise' : 'tutor.chip')}
               </button>
             ) : null}
           </div>
@@ -304,8 +326,8 @@ export function MascotChat() {
               ref={inputRef}
               value={input}
               onChange={(event) => setInput(event.target.value)}
-              placeholder={t('tutor.placeholder')}
-              aria-label={t('tutor.placeholder')}
+              placeholder={t(exercise ? 'tutor.placeholderExercise' : 'tutor.placeholder')}
+              aria-label={t(exercise ? 'tutor.placeholderExercise' : 'tutor.placeholder')}
               maxLength={160}
               disabled={!ready || busy || blocked}
               autoComplete="off"
@@ -348,8 +370,9 @@ export function MascotChat() {
 function quotaLabel(
   quotaState: QuotaState,
   blocked: boolean,
+  exercise: boolean,
   t: (key: 'common.loading' | 'tutor.statusOff' | 'tutor.statusUnknown' | 'tutor.limit' | 'tutor.today', vars?: Record<string, string | number>) => string,
-  countInline: (kind: 'words' | 'requests', count: number) => string,
+  countInline: (kind: 'words' | 'tasks' | 'requests', count: number) => string,
 ): string {
   if (quotaState.status === 'loading') return t('common.loading')
   if (quotaState.status === 'unconfigured') return t('tutor.statusOff')
@@ -357,18 +380,21 @@ function quotaLabel(
     return quotaState.status === 'error' ? t('tutor.statusUnknown') : t('tutor.limit')
   }
   return t('tutor.today', {
-    words: countInline('words', wordsLeft(quotaState.quota)),
+    words: countInline(exercise ? 'tasks' : 'words', wordsLeft(quotaState.quota)),
     requests: countInline('requests', requestsLeft(quotaState.quota)),
   })
 }
 
-function avoidTerms(cards: Card[], decks: Deck[], subjectId: string): string[] {
-  const mine = cardsInSubject(cards, decks, subjectId).filter((card) => card.type === 'vocab')
+function avoidTerms(cards: Card[], decks: Deck[], subjectId: string, exercise: boolean): string[] {
+  const mine = cardsInSubject(cards, decks, subjectId).filter((card) =>
+    exercise ? card.type === 'cloze' || card.type === 'transform' : card.type === 'vocab',
+  )
   mine.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
   const seen = new Set<string>()
   const out: string[] = []
   for (const card of mine) {
-    const term = card.term.trim().slice(0, 40)
+    const raw = card.type === 'cloze' ? (card.sentence ?? card.term) : card.term
+    const term = raw.trim().slice(0, exercise ? 140 : 40)
     const key = term.toLocaleLowerCase()
     if (!term || seen.has(key)) continue
     seen.add(key)

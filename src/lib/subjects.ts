@@ -429,24 +429,38 @@ export type PreparedStudy = {
   removedSubjectIds: string[]
   subjectUpserts: string[]
   deckUpserts: string[]
-  activeSubjectId: string
+  activeSubjectId: string | undefined
 }
 
 /**
  * One preset language per account. Decks without a subject join Italian, which
  * is created when the account has no subjects yet.
+ * `seedDefault` stays false during first-run onboarding so the person picks
+ * the language instead of inheriting Italian.
  */
 export function prepareSubjects(
   userId: string,
   subjects: Subject[],
   decks: Deck[],
   settings: Settings,
+  seedDefault = true,
 ): PreparedStudy {
   const owned = subjects.map((subject) => ({ ...subject, userId }))
   const deduped = dedupePresets(owned)
   let nextSubjects = deduped.subjects
   const subjectUpserts: string[] = []
   const deckUpserts = new Set<string>()
+
+  if (nextSubjects.length === 0 && !seedDefault) {
+    return {
+      subjects: [],
+      decks,
+      removedSubjectIds: deduped.removed,
+      subjectUpserts: [],
+      deckUpserts: [],
+      activeSubjectId: undefined,
+    }
+  }
 
   if (nextSubjects.length === 0) {
     const italian = subjectFromPreset(LANGUAGE_PRESETS[0], userId)

@@ -1,13 +1,48 @@
-import type { Card, CardType, Stage } from '../types/models'
+import type { Card, CardType, IntervalSchedule, Stage } from '../types/models'
 import { addDays, nowIso, startOfDay, uid } from './utils'
 
+/**
+ * Default ladder: 1 → 3 → 7 → 14 → 30 days. One to five steps.
+ * The last step is where a word counts as learned; further passes keep that gap.
+ * A miss uses the first step.
+ */
+export const DEFAULT_INTERVALS: IntervalSchedule = [1, 3, 7, 14, 30]
+export const MIN_INTERVAL_STEPS = 1
+export const MAX_INTERVAL_STEPS = 5
+
 export const STAGE_INTERVALS_DAYS: Record<Stage, number> = {
-  0: 1,
-  1: 3,
-  2: 7,
-  3: 14,
-  4: 30,
-  5: 30,
+  0: DEFAULT_INTERVALS[0],
+  1: DEFAULT_INTERVALS[1],
+  2: DEFAULT_INTERVALS[2],
+  3: DEFAULT_INTERVALS[3],
+  4: DEFAULT_INTERVALS[4],
+  5: DEFAULT_INTERVALS[4],
+}
+
+const MAX_INTERVAL_DAYS = 365
+
+export function clampIntervalDays(value: number, min = 1): number {
+  if (!Number.isFinite(value)) return min
+  return Math.min(MAX_INTERVAL_DAYS, Math.max(min, Math.round(value)))
+}
+
+export function normalizeIntervals(value: unknown): IntervalSchedule {
+  if (!Array.isArray(value) || value.length === 0) return [...DEFAULT_INTERVALS]
+  const days = value
+    .slice(0, MAX_INTERVAL_STEPS)
+    .map((item) => {
+      const parsed = Number(item)
+      if (!Number.isFinite(parsed)) return null
+      return clampIntervalDays(parsed, 1)
+    })
+    .filter((item): item is number => item !== null)
+  return days.length > 0 ? days : [...DEFAULT_INTERVALS]
+}
+
+/** Next gap when the learner adds a step: about twice the previous one. */
+export function suggestIntervalStep(steps: number[]): number {
+  const last = steps[steps.length - 1] ?? 1
+  return clampIntervalDays(last * 2, 1)
 }
 
 export function isDue(card: Card, now = new Date()): boolean {
@@ -42,29 +77,57 @@ export function exerciseCards(cards: Card[]): Card[] {
   return cards.filter((card) => card.type === 'cloze' || card.type === 'transform')
 }
 
-export function intervalDaysForStage(stage: Stage): number {
-  return STAGE_INTERVALS_DAYS[stage]
+/** Days a pass at this stage waits. The last step covers every stage after the ladder. */
+export function intervalDaysForStage(stage: Stage, intervals?: IntervalSchedule): number {
+  const schedule = normalizeIntervals(intervals ?? DEFAULT_INTERVALS)
+  return schedule[Math.min(schedule.length - 1, stage)]
 }
 
-export function nextStage(stage: Stage): Stage {
-  return Math.min(5, stage + 1) as Stage
+/** Gap that brought the card to this stage. Stage 0 has none. */
+export function stageLabelDays(stage: Stage, intervals?: IntervalSchedule): number | null {
+  if (stage <= 0) return null
+  const schedule = normalizeIntervals(intervals ?? DEFAULT_INTERVALS)
+  if (stage >= 5) return schedule[schedule.length - 1]
+  return schedule[Math.min(schedule.length - 1, stage - 1)]
 }
 
-export function advanceCard(card: Card, now = new Date()): Card {
-  const days = intervalDaysForStage(card.stage)
+/** One pass per step, then stage 5. A shorter ladder reaches “learned” sooner. */
+export function nextStage(stage: Stage, intervals?: IntervalSchedule): Stage {
+  const schedule = normalizeIntervals(intervals ?? DEFAULT_INTERVALS)
+  if (stage >= schedule.length - 1) return 5
+  return (stage + 1) as Stage
+}
+
+export function advanceCard(card: Card, now = new Date(), intervals?: IntervalSchedule): Card {
+  const days = intervalDaysForStage(card.stage, intervals)
   return {
     ...card,
-    stage: nextStage(card.stage),
+    stage: nextStage(card.stage, intervals),
     nextReviewDate: addDays(startOfDay(now), days).toISOString(),
   }
 }
 
-export function failCard(card: Card, now = new Date()): Card {
+export function failCard(card: Card, now = new Date(), intervals?: IntervalSchedule): Card {
   return {
     ...card,
     stage: 0,
-    nextReviewDate: addDays(startOfDay(now), 1).toISOString(),
+    nextReviewDate: addDays(startOfDay(now), intervalDaysForStage(0, intervals)).toISOString(),
   }
+}
+
+/** Set the next review without moving the stage. `0` means due today. */
+export function reviewInDays(card: Card, days: number, now = new Date()): Card {
+  return {
+    ...card,
+    nextReviewDate: addDays(startOfDay(now), clampIntervalDays(days, 0)).toISOString(),
+  }
+}
+
+export function daysUntilReview(iso: string, now = new Date()): number {
+  const due = startOfDay(new Date(iso)).getTime()
+  const today = startOfDay(now).getTime()
+  if (Number.isNaN(due)) return 0
+  return Math.round((due - today) / 86_400_000)
 }
 
 type NewCardInput = {

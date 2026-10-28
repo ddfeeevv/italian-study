@@ -1,4 +1,5 @@
 import { normalizeDeck } from './mappers'
+import { normalizeIntervals } from './srs'
 import type { AppData, Card, Deck, Settings, Subject } from '../types/models'
 
 export const SETTINGS_KEY = 'parola:settings'
@@ -18,6 +19,7 @@ export function queueKey(userId: string): string {
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
   autoPlayAudio: true,
+  intervals: [1, 3, 7, 14, 30],
 }
 
 export function emptyData(settings: Settings = DEFAULT_SETTINGS): AppData {
@@ -66,9 +68,14 @@ export function saveCache(userId: string, data: AppData): void {
 export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY)
-    return raw ? { ...DEFAULT_SETTINGS, ...(JSON.parse(raw) as Settings) } : { ...DEFAULT_SETTINGS }
+    const parsed = raw ? (JSON.parse(raw) as Partial<Settings>) : {}
+    return {
+      ...DEFAULT_SETTINGS,
+      ...parsed,
+      intervals: normalizeIntervals(parsed.intervals),
+    }
   } catch {
-    return { ...DEFAULT_SETTINGS }
+    return { ...DEFAULT_SETTINGS, intervals: [1, 3, 7, 14, 30] }
   }
 }
 

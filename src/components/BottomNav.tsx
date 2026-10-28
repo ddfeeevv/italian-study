@@ -1,4 +1,4 @@
-import { BookOpen, CalendarCheck, GraduationCap, ListChecks, UserRound } from 'lucide-react'
+import { BookOpen, CalendarCheck, GraduationCap, ListChecks, UserRound, Users } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 import { useI18n } from '../i18n/translate'
 import { clsx } from '../lib/utils'
@@ -13,13 +13,18 @@ import { AvatarBadge } from './AvatarBadge'
 
 function useNavItems() {
   const { t } = useI18n()
-  return [
+  const { profile } = useSocial()
+  const items = [
     { to: '/', label: t('nav.decks'), icon: BookOpen, end: true, badge: false },
     { to: '/review', label: t('nav.today'), icon: CalendarCheck, end: false, badge: true },
     { to: '/exercises', label: t('nav.exercises'), icon: ListChecks, end: false, badge: false },
     { to: '/exam', label: t('nav.exam'), icon: GraduationCap, end: true, badge: false },
     { to: '/account', label: t('nav.account'), icon: UserRound, end: false, badge: false },
   ]
+  if (profile?.role === 'teacher') {
+    items.splice(4, 0, { to: '/class', label: t('nav.students'), icon: Users, end: true, badge: false })
+  }
+  return items
 }
 
 export function SideNav() {
@@ -95,7 +100,7 @@ export function BottomNav() {
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-card/95 px-2 pb-[max(0.4rem,env(safe-area-inset-bottom))] pt-1.5 backdrop-blur lg:hidden">
-      <ul className="mx-auto grid w-full max-w-lg grid-cols-5 gap-1">
+      <ul className={clsx('mx-auto grid w-full gap-1', items.length > 5 ? 'max-w-xl grid-cols-6' : 'max-w-lg grid-cols-5')}>
         {items.map((item) => {
           const Icon = item.icon
           return (

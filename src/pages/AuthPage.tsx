@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Navigate, useLocation } from 'react-router-dom'
 import { LanguageMenu } from '../components/LanguageSwitcher'
 import { Button, Card, Field, Input, Screen } from '../components/ui'
 import { useI18n } from '../i18n/translate'
@@ -9,6 +9,8 @@ import { useAuth } from '../store/auth-store'
 export function AuthPage() {
   const { t } = useI18n()
   const { session, signIn, signUp, signInMagic } = useAuth()
+  const location = useLocation()
+  const [role, setRole] = useState<'student' | 'teacher'>('student')
   const [mode, setMode] = useState<'in' | 'up' | 'magic'>('in')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -16,7 +18,7 @@ export function AuthPage() {
   const [busy, setBusy] = useState(false)
   const [rateLimitUntil, setRateLimitUntil] = useState(0)
 
-  if (session) return <Navigate to="/" replace />
+  if (session) return <Navigate to={safeReturn(location.state) ?? '/'} replace />
 
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
 
@@ -37,9 +39,9 @@ export function AuthPage() {
     setMessage(null)
     const error =
       mode === 'magic'
-        ? await signInMagic(email)
+        ? await signInMagic(email, role)
         : mode === 'up'
-          ? await signUp(email, password)
+          ? await signUp(email, password, role)
           : await signIn(email, password)
     setBusy(false)
     if (error) {
@@ -90,6 +92,34 @@ export function AuthPage() {
                 </button>
               ))}
             </div>
+            {mode !== 'in' ? (
+              <div className="space-y-2">
+                <p className="px-1 text-xs font-semibold uppercase tracking-[0.14em] text-muted">{t('auth.roleLabel')}</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    ['student', t('auth.roleStudent')],
+                    ['teacher', t('auth.roleTeacher')],
+                  ] as const).map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setRole(id)}
+                      className={
+                        role === id
+                          ? 'min-h-12 rounded-2xl bg-accent font-semibold text-accent-fg'
+                          : 'min-h-12 rounded-2xl bg-surface font-medium text-muted'
+                      }
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-sm leading-6 text-muted">
+                  {role === 'teacher' ? t('auth.roleTeacherHint') : t('auth.roleStudentHint')}
+                </p>
+                <p className="text-sm leading-6 text-muted">{t('auth.roleFixed')}</p>
+              </div>
+            ) : null}
             <Field label={t('auth.email')}>
               <Input
                 type="email"
@@ -132,4 +162,12 @@ export function AuthPage() {
       </p>
     </Screen>
   )
+}
+
+function safeReturn(state: unknown): string | null {
+  if (!state || typeof state !== 'object' || !('from' in state)) return null
+  const from = (state as { from?: unknown }).from
+  if (typeof from !== 'string') return null
+  if (!from.startsWith('/') || from.startsWith('//') || from.startsWith('/login')) return null
+  return from
 }

@@ -41,6 +41,7 @@ function readProfile(data: unknown): Profile | null {
     username: row.username,
     avatar: typeof row.avatar === 'string' ? row.avatar : DEFAULT_AVATAR,
     customized: Boolean(row.customized),
+    role: row.role === 'teacher' ? 'teacher' : 'student',
     created_at: typeof row.created_at === 'string' ? row.created_at : '',
     updated_at: typeof row.updated_at === 'string' ? row.updated_at : '',
   })

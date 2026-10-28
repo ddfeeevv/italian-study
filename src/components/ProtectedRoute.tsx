@@ -1,9 +1,11 @@
-import { Navigate, Outlet } from 'react-router-dom'
+import { Navigate, Outlet, useLocation } from 'react-router-dom'
+import { OnboardingGate } from './Onboarding'
 import { useI18n } from '../i18n/translate'
 import { useAuth } from '../store/auth-store'
 
 export function ProtectedRoute() {
   const { t } = useI18n()
+  const location = useLocation()
   const { session, loading } = useAuth()
   if (loading) {
     return (
@@ -12,6 +14,14 @@ export function ProtectedRoute() {
       </div>
     )
   }
-  if (!session) return <Navigate to="/login" replace />
-  return <Outlet />
+  if (!session) {
+    const from = `${location.pathname}${location.search}`
+    return <Navigate to="/login" replace state={{ from }} />
+  }
+  return (
+    <>
+      <Outlet />
+      <OnboardingGate />
+    </>
+  )
 }

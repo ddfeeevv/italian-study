@@ -4,11 +4,14 @@ import { DEFAULT_AVATAR, isAvatar } from './avatars'
 import { supabase } from './supabase'
 import type { FriendProgressRow, ProfileRow } from './supabase'
 
+export type AccountRole = 'student' | 'teacher'
+
 export type Profile = {
   id: string
   username: string
   avatar: string
   customized: boolean
+  role: AccountRole
 }
 
 export type FriendRelation = 'incoming' | 'outgoing' | 'friend'
@@ -80,6 +83,7 @@ export function mapProfile(row: ProfileRow): Profile {
     username: row.username,
     avatar: isAvatar(row.avatar) ? row.avatar : DEFAULT_AVATAR,
     customized: Boolean(row.customized),
+    role: row.role === 'teacher' ? 'teacher' : 'student',
   }
 }
 

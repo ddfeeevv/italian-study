@@ -6,6 +6,7 @@ import {
   applyCorrect,
   applyExamMiss,
   applyIncorrect,
+  applyMoveOn,
   applyPreviewDone,
   BATCH_SIZE_MAX,
   buildChoices,
@@ -19,7 +20,7 @@ import {
   type QueueItem,
   type SessionRuntime,
 } from '../../lib/session'
-import { advanceCard, failCard } from '../../lib/srs'
+import { advanceCard, failCard, intervalDaysForStage, normalizeIntervals, reviewInDays } from '../../lib/srs'
 import { useI18n, t } from '../../i18n/translate'
 import { speechText, speak } from '../../lib/tts'
 import { productionProfile, subjectSpeech } from '../../lib/subjects'
@@ -88,6 +89,7 @@ export function SessionView({
   const [explain, setExplain] = useState<{ answer: string; explanation?: string } | null>(null)
   const [canPreviewBack, setCanPreviewBack] = useState(false)
   const [previewGate, setPreviewGate] = useState(false)
+  const [freeRepeat, setFreeRepeat] = useState(false)
 
   const pendingRuntimeRef = useRef<SessionRuntime | null>(null)
   const runtimeRef = useRef(runtime)
@@ -160,6 +162,7 @@ export function SessionView({
   }, [current?.cardId, current?.tier, currentCard?.id, settings.autoPlayAudio, answerRevealed, isPreview, speech.locale])
 
   useEffect(() => {
+    isMountedRef.current = true
     return () => {
       isMountedRef.current = false
       clearAdvanceTimer()
@@ -176,12 +179,17 @@ export function SessionView({
     advanceTimerRef.current = window.setTimeout(() => applyRuntime(nextRuntime), delay)
   }
 
+  const intervals = normalizeIntervals(settings.intervals)
+  const schedules = !practice && !freeRepeat
+
   const persistFail = (card: Card) => {
-    if (!practice) updateCard(failCard(card))
+    if (!schedules) return
+    updateCard(failCard(card, new Date(), intervals))
   }
 
   const persistPass = (card: Card) => {
-    if (!practice) updateCard(advanceCard(card))
+    if (!schedules) return
+    updateCard(advanceCard(card, new Date(), intervals))
   }
 
   const failAndExplain = (card: Card) => {
@@ -278,7 +286,25 @@ export function SessionView({
   const continueAfterError = () => {
     if (!explainReady()) return
     setExplain(null)
-    applyRuntime(exam ? applyExamMiss(runtime) : applyIncorrect(runtime))
+    applyRuntime(exam ? applyExamMiss(runtime) : applyMoveOn(runtime))
+  }
+
+  const againAfterError = () => {
+    if (!explainReady()) return
+    setExplain(null)
+    applyRuntime(applyIncorrect(runtime))
+  }
+
+  const restartBatch = () => {
+    const batch = runtime.batchIds
+      .map((id) => cardMap.get(id))
+      .filter((card): card is Card => Boolean(card))
+    if (batch.length === 0) return
+    setFreeRepeat(true)
+    previewSeenRef.current = []
+    setCanPreviewBack(false)
+    setPreviewGate(false)
+    applyRuntime(createSession(batch, { takeAll: true, skipPreview: true }))
   }
 
   const flushAdvance = () => {
@@ -319,9 +345,11 @@ export function SessionView({
           return
         }
         if (explain) {
+          if (isTextInputFocused()) return
           event.preventDefault()
           event.stopPropagation()
-          flushAdvance()
+          if (exam) continueAfterError()
+          else againAfterError()
           return
         }
         if (flushAdvance()) {
@@ -431,14 +459,21 @@ export function SessionView({
                     maxItems: countInline('cards', BATCH_SIZE_MAX),
                   })}{' '}
                   {runtime.failedIds.length > 0
-                    ? t('session.batchErrors', { count: runtime.failedIds.length })
+                    ? t('session.batchErrors', {
+                        count: runtime.failedIds.length,
+                        when: countInline('days', intervalDaysForStage(0, intervals)),
+                      })
                     : t('session.batchClean')}
                 </>
               )}
             </p>
-            <Button className="mt-8 w-full" onClick={leave}>
-              {t('common.done')}
-            </Button>
+            <div className="mt-8 flex flex-col gap-3">
+              <Button variant="secondary" onClick={restartBatch}>
+                {t('session.again')}
+              </Button>
+              <p className="text-xs leading-5 text-muted">{t('session.againBatch')}</p>
+              <Button onClick={leave}>{t('common.done')}</Button>
+            </div>
           </div>
         </div>
       </Screen>
@@ -560,10 +595,23 @@ export function SessionView({
       </div>
 
       {current.tier === 2 ? <AccentBar accents={cardSubject?.accents ?? []} /> : null}
-      {explain ? (
+      {explain && currentCard ? (
         <ExplanationSheet
+          key={`${currentCard.id}:${current?.tier ?? 0}`}
           answer={explain.answer}
           explanation={explain.explanation}
+          locale={speech.locale}
+          speechLabel={speech.label}
+          returnDays={schedules ? intervalDaysForStage(0, intervals) : undefined}
+          onReturnDays={
+            schedules
+              ? (days) => {
+                  const latest = cardMap.get(currentCard.id) ?? currentCard
+                  updateCard(reviewInDays({ ...latest, stage: 0 }, days))
+                }
+              : undefined
+          }
+          onAgain={exam ? undefined : againAfterError}
           onContinue={continueAfterError}
         />
       ) : null}

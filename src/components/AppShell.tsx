@@ -1,4 +1,4 @@
-import { Outlet } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 import { SyncBadge } from './SyncBadge'
 import { BottomNav, SideNav } from './BottomNav'
 import { LanguageMenu } from './LanguageSwitcher'
@@ -7,6 +7,9 @@ import { StreakBadge } from './StreakCard'
 import { SubjectSwitcher } from './SubjectSwitcher'
 
 export function AppShell() {
+  const { pathname } = useLocation()
+  const showTutor = pathname === '/' || pathname.startsWith('/decks') || pathname.startsWith('/exercises')
+
   return (
     <div className="min-h-dvh bg-bg lg:grid lg:grid-cols-[15.5rem_minmax(0,1fr)]">
       <SideNav />
@@ -22,7 +25,7 @@ export function AppShell() {
           </div>
         </div>
         <Outlet />
-        <MascotChat />
+        {showTutor ? <MascotChat /> : null}
       </div>
       <BottomNav />
     </div>

@@ -1,14 +1,24 @@
-import { ListPlus, Pencil, PenLine, Play, Plus } from 'lucide-react'
+import { ListPlus, Minus, Pencil, PenLine, Play, Plus, Repeat } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { SpeakButton } from '../components/SpeakButton'
+import { ShareDeckButton } from '../components/ShareDeckButton'
 import { Button, EmptyState, Field, IconButton, Input, List, Page, Sheet, Textarea } from '../components/ui'
 import { linesToCards, parseWordText, sanitizeUserInput } from '../lib/import-export'
-import { createCard, dueCount, vocabCards } from '../lib/srs'
+import {
+  clampIntervalDays,
+  createCard,
+  daysUntilReview,
+  dueCount,
+  intervalDaysForStage,
+  normalizeIntervals,
+  reviewInDays,
+  stageLabelDays,
+  vocabCards,
+} from '../lib/srs'
 import { speechText } from '../lib/tts'
 import { subjectSpeech } from '../lib/subjects'
 import { useI18n } from '../i18n/translate'
-import type { MessageKey } from '../i18n/messages'
 import type { Card as StudyCard } from '../types/models'
 import { useAppStore } from '../store/app-store'
 import { useAuth } from '../store/auth-store'
@@ -19,9 +29,10 @@ type AddMode = 'menu' | 'manual' | 'bulk' | null
 export function DeckDetailPage() {
   const { deckId } = useParams()
   const navigate = useNavigate()
-  const { t, plural } = useI18n()
+  const { t, plural, countInline } = useI18n()
   const { user } = useAuth()
-  const { decks, cardsByDeck, subjects, updateDeck, deleteDeck, addCards, updateCard, deleteCard } = useAppStore()
+  const { decks, cardsByDeck, subjects, settings, updateDeck, deleteDeck, addCards, updateCard, deleteCard } =
+    useAppStore()
   const deck = decks.find((item) => item.id === deckId)
   const cards = deckId ? cardsByDeck(deckId) : []
   const words = vocabCards(cards)
@@ -29,9 +40,17 @@ export function DeckDetailPage() {
   const [editingDeck, setEditingDeck] = useState(false)
   const [editingCard, setEditingCard] = useState<StudyCard | null>(null)
   const [addMode, setAddMode] = useState<AddMode>(null)
+  const [gapCard, setGapCard] = useState<StudyCard | null>(null)
+  const intervals = normalizeIntervals(settings.intervals)
   const subject = subjects.find((item) => item.id === deck?.subjectId)
   const speech = subjectSpeech(subject)
   const presetId = subject?.presetId
+
+  const stageName = (card: StudyCard) => {
+    const days = stageLabelDays(card.stage, intervals)
+    if (days == null) return t('stage.0')
+    return countInline('days', days)
+  }
 
   if (!deck || !deckId) {
     return (
@@ -73,10 +92,13 @@ export function DeckDetailPage() {
             </IconButton>
           </header>
 
-          <Button className="mb-6 w-full" disabled={dueWords === 0} onClick={() => navigate(`/study/${deck.id}`)}>
-            <Play size={16} />
-            {t('common.learn')}
-          </Button>
+          <div className="mb-6 space-y-2">
+            <Button className="w-full" disabled={dueWords === 0} onClick={() => navigate(`/study/${deck.id}`)}>
+              <Play size={16} />
+              {t('common.learn')}
+            </Button>
+            <ShareDeckButton deckId={deck.id} />
+          </div>
 
           <button type="button" className="hidden text-sm text-danger lg:inline" onClick={removeDeck}>
             {t('deck.delete')}
@@ -112,7 +134,21 @@ export function DeckDetailPage() {
                       <span className="block truncate font-semibold">{card.term}</span>
                       <span className="block truncate text-sm text-muted">{card.translation}</span>
                     </span>
-                    <span className="shrink-0 text-xs text-muted">{t(`stage.${card.stage}` as MessageKey)}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGapCard(card)}
+                    className="shrink-0 rounded-lg px-2 py-1 text-xs font-medium text-accent hover:bg-accent/10"
+                  >
+                    {stageName(card)}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={t('deck.drill')}
+                    onClick={() => navigate(`/study/${deck.id}?card=${card.id}`)}
+                    className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl text-muted transition hover:bg-accent/10 hover:text-accent"
+                  >
+                    <Repeat size={16} />
                   </button>
                 </div>
               ))}
@@ -185,6 +221,18 @@ export function DeckDetailPage() {
                 }
               : undefined
           }
+        />
+      ) : null}
+
+      {gapCard ? (
+        <NextGapSheet
+          card={gapCard}
+          scheduled={intervalDaysForStage(gapCard.stage, intervals)}
+          onCancel={() => setGapCard(null)}
+          onSave={(days) => {
+            updateCard(reviewInDays(gapCard, days))
+            setGapCard(null)
+          }}
         />
       ) : null}
 
@@ -371,6 +419,78 @@ function CardForm({
             {t('deck.deleteCard')}
           </button>
         ) : null}
+    </Sheet>
+  )
+}
+
+function NextGapSheet({
+  card,
+  scheduled,
+  onCancel,
+  onSave,
+}: {
+  card: StudyCard
+  scheduled: number
+  onCancel: () => void
+  onSave: (days: number) => void
+}) {
+  const { t, plural, countInline } = useI18n()
+  const initial = Math.max(0, daysUntilReview(card.nextReviewDate))
+  const [text, setText] = useState(String(initial))
+  const parsed = clampIntervalDays(Number(text), 0)
+  const shown = text === '' ? 0 : parsed
+
+  const setSafe = (value: number) => {
+    setText(String(clampIntervalDays(value, 0)))
+  }
+
+  return (
+    <Sheet onClose={onCancel}>
+      <h2 className="font-display text-2xl">{card.term}</h2>
+      <p className="mt-1 text-sm text-muted">{t('intervals.next')}</p>
+      <div className="mt-4 flex items-center gap-1">
+        <button
+          type="button"
+          aria-label={t('intervals.less')}
+          disabled={shown <= 0}
+          onClick={() => setSafe(shown - 1)}
+          className="inline-flex size-11 items-center justify-center rounded-xl text-fg hover:bg-surface disabled:opacity-40"
+        >
+          <Minus size={16} />
+        </button>
+        <input
+          inputMode="numeric"
+          aria-label={t('intervals.next')}
+          value={text}
+          onChange={(event) => setText(event.target.value.replace(/[^\d]/g, '').slice(0, 3))}
+          onBlur={() => setText(String(parsed))}
+          className="h-11 w-16 rounded-xl border border-line bg-card text-center text-sm text-fg outline-none focus:border-accent"
+        />
+        <span className="w-14 text-sm text-muted">{plural('days', shown)}</span>
+        <button
+          type="button"
+          aria-label={t('intervals.more')}
+          disabled={shown >= 365}
+          onClick={() => setSafe(shown + 1)}
+          className="inline-flex size-11 items-center justify-center rounded-xl text-fg hover:bg-surface disabled:opacity-40"
+        >
+          <Plus size={16} />
+        </button>
+      </div>
+      <p className="mt-2 text-xs leading-5 text-muted">{t('intervals.zero')}</p>
+      <button
+        type="button"
+        className="mt-3 text-sm font-semibold text-accent"
+        onClick={() => setSafe(scheduled)}
+      >
+        {t('intervals.useDefault', { when: countInline('days', scheduled) })}
+      </button>
+      <div className="mt-6 grid grid-cols-2 gap-3">
+        <Button variant="secondary" onClick={onCancel}>
+          {t('common.cancel')}
+        </Button>
+        <Button onClick={() => onSave(text === '' ? 0 : parsed)}>{t('common.save')}</Button>
+      </div>
     </Sheet>
   )
 }
